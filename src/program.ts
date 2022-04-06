@@ -51,7 +51,8 @@ export class Program {
         const source = project.createSourceFile(options.output);
 
         // Generate the actual source code.
-        this.generateCode(source, parsed, options.prefix);
+        console.log(options);
+        this.generateCode(source, parsed, options.prefix, options.javascript);
 
         // Extract source code and format it.
         source.formatText();
@@ -100,13 +101,19 @@ export class Program {
     private generateCode(
         source: morph.SourceFile,
         parsed: IParsed,
-        interfacePrefix = ""
+        interfacePrefix = "",
+        targetJavascript = false
     ): void {
         const namespaces: Namespace[] = [];
-
         if (parsed.namespaces) {
             const ns = parsed.namespaces.map(
-                (n) => new Namespace(n.definitions, interfacePrefix, n.name)
+                (n) =>
+                    new Namespace(
+                        n.definitions,
+                        interfacePrefix,
+                        n.name,
+                        targetJavascript
+                    )
             );
 
             namespaces.push(...ns);
@@ -121,7 +128,12 @@ export class Program {
         }
 
         if (parsed.definitions) {
-            const ns = new Namespace(parsed.definitions, interfacePrefix);
+            const ns = new Namespace(
+                parsed.definitions,
+                interfacePrefix,
+                "",
+                targetJavascript
+            );
 
             namespaces.push(ns);
         }

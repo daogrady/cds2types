@@ -30,6 +30,8 @@ import { BaseType } from "./base.type";
  * @class Namespace
  */
 export class Namespace {
+    private targetJavascript: boolean;
+
     /**
      * Namespace name.
      *
@@ -103,16 +105,19 @@ export class Namespace {
      * @param {string[]} blacklist Blacklist
      * @param {string} [interfacePrefix=""] Interface prefix
      * @param {string} [name] Name of the namespace
+     * @param {boolean} [targetJavascript] Whether the output should be Javascript compatible
      * @memberof Namespace
      */
     constructor(
         definitions: Map<string, Definition>,
         interfacePrefix = "",
-        name?: string
+        name?: string,
+        targetJavascript = false
     ) {
+        this.targetJavascript = targetJavascript;
         this._name = name;
         this.definitions = definitions;
-        this.extractTypes(interfacePrefix);
+        this.extractTypes(interfacePrefix, targetJavascript);
     }
 
     /**
@@ -241,11 +246,21 @@ export class Namespace {
             }
 
             //source.addInterface(ed.interfaceDeclarationStructure);
-            source.addClass(ed.interfaceDeclarationStructure);
+            console.log("targeting js", this.targetJavascript);
+            const entity = ed.entityDeclarationStructure;
+            if (this.targetJavascript)
+                source.addClass(
+                    ed.entityDeclarationStructure as morph.ClassDeclarationStructure
+                );
+            else {
+                source.addInterface(
+                    ed.entityDeclarationStructure as morph.InterfaceDeclarationStructure
+                );
+            }
 
             if (!_.isEmpty(ed.actionFuncStructures)) {
                 const actionsNamespace = source.addNamespace({
-                    name: `${ed.interfaceDeclarationStructure.name}.actions`,
+                    name: `${ed.entityDeclarationStructure.name}.actions`,
                     isExported: true,
                 });
 
@@ -282,9 +297,10 @@ export class Namespace {
      * @private
      * @param {string[]} blacklist Blacklist an definition keys that should not be generated.
      * @param {string} [interfacePrefix=""] Interface prefix.
+     * @param {boolean} [targetJavascript] Whether the output should be Javascript compatible.
      * @memberof Namespace
      */
-    private extractTypes(interfacePrefix = ""): void {
+    private extractTypes(interfacePrefix = "", targetJavascript = false): void {
         for (const [key, value] of this.definitions) {
             if (value == undefined) continue;
 
@@ -302,7 +318,8 @@ export class Namespace {
                     key,
                     value,
                     interfacePrefix,
-                    this.name
+                    this.name,
+                    targetJavascript
                 );
 
                 this.entities.push(entity);

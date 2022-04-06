@@ -17,7 +17,9 @@ import {
  * @interface IEntityDeclarationStructure
  */
 export interface IEntityDeclarationStructure {
-    entityDeclarationStructure: morph.ClassDeclarationStructure; //| morph.InterfaceDeclarationStructure
+    entityDeclarationStructure:
+        | morph.ClassDeclarationStructure
+        | morph.InterfaceDeclarationStructure;
     //interfaceDeclarationStructure: morph.ClassDeclarationStructure; //| morph.InterfaceDeclarationStructure
     enumDeclarationStructures: morph.EnumDeclarationStructure[];
     actionFuncStructures: IActionFunctionDeclarationStructure[];
@@ -33,6 +35,8 @@ export interface IEntityDeclarationStructure {
  * @extends {BaseType}
  */
 export class Entity extends BaseType<IEntityDeclarationStructure> {
+    private targetJavascript: boolean;
+
     private get def(): IEntityDefinition {
         return this.definition as IEntityDefinition;
     }
@@ -50,9 +54,11 @@ export class Entity extends BaseType<IEntityDeclarationStructure> {
         name: string,
         definition: IEntityDefinition,
         prefix = "",
-        namespace = ""
+        namespace = "",
+        targetJavascript = false
     ) {
         super(name, definition, prefix, namespace);
+        this.targetJavascript = targetJavascript;
     }
 
     /**
@@ -66,12 +72,18 @@ export class Entity extends BaseType<IEntityDeclarationStructure> {
         const extFields = this.getExtensionInterfaceFields(types);
 
         const result: IEntityDeclarationStructure = {
-            interfaceDeclarationStructure: this.createClass("", "", ""),
+            entityDeclarationStructure: this.targetJavascript
+                ? this.createClass("", "", "")
+                : this.createInterface("", "", ext),
             //entityDeclarationStructure: this.createClass("", "", ""), //this.createInterface("", "", ext),
             enumDeclarationStructures: [],
             actionFuncStructures: [],
         };
 
+        const fields: (
+            | morph.PropertyDeclarationStructure
+            | morph.PropertySignatureStructure
+        )[] = [];
         if (this.def.elements) {
             for (const [key, value] of this.def.elements) {
                 if (value.enum) {
@@ -79,29 +91,46 @@ export class Entity extends BaseType<IEntityDeclarationStructure> {
                         this.createEnumDeclaration(key, value)
                     );
 
-                    result.interfaceDeclarationStructure.properties?.push(
-                        /*
-                        this.createInterfaceField(
-                            key,
-                            value,
-                            types,
-                            this.prefix
-                        ) as morph.PropertySignatureStructure
-                        */
-                        this.createClassField(key, value, types, this.prefix)
+                    //result.entityDeclarationStructure.properties?.push(
+                    fields.push(
+                        this.targetJavascript
+                            ? this.createClassField(
+                                  key,
+                                  value,
+                                  types,
+                                  this.prefix
+                              )
+                            : this.createInterfaceField(
+                                  key,
+                                  value,
+                                  types,
+                                  this.prefix
+                              )
+
+                        //this.createClassField(key, value, types, this.prefix)
                     );
                 } else {
                     if (!extFields.includes(key)) {
                         //const field = this.createInterfaceField(
-                        const field = this.createClassField(
-                            key,
-                            value,
-                            types,
-                            this.prefix
-                        );
-                        result.interfaceDeclarationStructure.properties?.push(
+                        const field = this.targetJavascript
+                            ? this.createClassField(
+                                  key,
+                                  value,
+                                  types,
+                                  this.prefix
+                              )
+                            : this.createInterfaceField(
+                                  key,
+                                  value,
+                                  types,
+                                  this.prefix
+                              );
+                        fields.push(field);
+                        /*
+                        result.entityDeclarationStructure.properties?.push(
                             field
                         );
+                        */
 
                         /*
                         if (
@@ -122,6 +151,20 @@ export class Entity extends BaseType<IEntityDeclarationStructure> {
                     }
                 }
             }
+        }
+
+        if (this.targetJavascript) {
+            const morphed: morph.ClassDeclarationStructure =
+                result.entityDeclarationStructure as morph.ClassDeclarationStructure;
+            fields
+                .map((f) => f as morph.PropertyDeclarationStructure) // morph.PropertySignatureStructure)
+                .forEach((f) => morphed.properties?.push(f));
+        } else {
+            const morphed: morph.InterfaceDeclarationStructure =
+                result.entityDeclarationStructure as morph.InterfaceDeclarationStructure;
+            fields
+                .map((f) => f as morph.PropertySignatureStructure)
+                .forEach((f) => morphed.properties?.push(f));
         }
 
         if (this.def.actions) {
