@@ -17,7 +17,8 @@ import {
  * @interface IEntityDeclarationStructure
  */
 export interface IEntityDeclarationStructure {
-    interfaceDeclarationStructure: morph.InterfaceDeclarationStructure;
+    entityDeclarationStructure: morph.ClassDeclarationStructure; //| morph.InterfaceDeclarationStructure
+    //interfaceDeclarationStructure: morph.ClassDeclarationStructure; //| morph.InterfaceDeclarationStructure
     enumDeclarationStructures: morph.EnumDeclarationStructure[];
     actionFuncStructures: IActionFunctionDeclarationStructure[];
 }
@@ -65,7 +66,8 @@ export class Entity extends BaseType<IEntityDeclarationStructure> {
         const extFields = this.getExtensionInterfaceFields(types);
 
         const result: IEntityDeclarationStructure = {
-            interfaceDeclarationStructure: this.createInterface("", "", ext),
+            interfaceDeclarationStructure: this.createClass("", "", ""),
+            //entityDeclarationStructure: this.createClass("", "", ""), //this.createInterface("", "", ext),
             enumDeclarationStructures: [],
             actionFuncStructures: [],
         };
@@ -78,16 +80,20 @@ export class Entity extends BaseType<IEntityDeclarationStructure> {
                     );
 
                     result.interfaceDeclarationStructure.properties?.push(
+                        /*
                         this.createInterfaceField(
                             key,
                             value,
                             types,
                             this.prefix
                         ) as morph.PropertySignatureStructure
+                        */
+                        this.createClassField(key, value, types, this.prefix)
                     );
                 } else {
                     if (!extFields.includes(key)) {
-                        const field = this.createInterfaceField(
+                        //const field = this.createInterfaceField(
+                        const field = this.createClassField(
                             key,
                             value,
                             types,
@@ -97,6 +103,7 @@ export class Entity extends BaseType<IEntityDeclarationStructure> {
                             field
                         );
 
+                        /*
                         if (
                             value.cardinality &&
                             value.cardinality.max === Cardinality.one
@@ -107,10 +114,11 @@ export class Entity extends BaseType<IEntityDeclarationStructure> {
                                 "_",
                                 value
                             );
-                            result.interfaceDeclarationStructure.properties?.push(
+                            result.entityDeclarationStructure.properties?.push(
                                 ...fields
                             );
                         }
+                        */
                     }
                 }
             }

@@ -105,6 +105,105 @@ export abstract class BaseType<O = unknown> {
     }
 
     /**
+     * Creates a class declaration.
+     *
+     * @protected
+     * @param {string} [prefix=""] Name prefix
+     * @param {string} [suffix=""] Name suffix
+     * @param {string[]} [ext] Extension type names
+     * @returns {morph.InterfaceDeclarationStructure} Created interface declaration
+     * @memberof BaseType
+     */
+    protected createClass(
+        prefix = "",
+        suffix = "",
+        ext?: string // FIXME: this could be an issue!
+    ): morph.ClassDeclarationStructure {
+        const sanitizedName = `${prefix}${this.sanitizeName(
+            this.sanitizeTarget(this.name)
+        )}${suffix}`;
+
+        return {
+            kind: morph.StructureKind.Class,
+            name: this.prefix + sanitizedName,
+            extends: ext,
+            properties: [],
+            isExported: true,
+            hasDeclareKeyword: true, // required to skip initialisation of number fields et al
+        };
+    }
+
+    private createField(
+        name: string,
+        element: IElement,
+        types: BaseType[],
+        prefix = "",
+        kind: morph.StructureKind
+    ): { kind: morph.StructureKind; name: string; type: string } {
+        const fieldName =
+            element.canBeNull || element.type === Type.Association
+                ? `${name}?`
+                : name;
+
+        const fieldType = element.enum
+            ? this.sanitizeName(this.sanitizeTarget(this.name)) +
+              this.sanitizeName(name)
+            : this.cdsElementToType(element, types, prefix);
+
+        return {
+            kind: kind,
+            name: fieldName,
+            type: fieldType,
+        };
+    }
+
+    /**
+     * Creates a interface field declaration.
+     *
+     * @protected
+     * @param {string} name Name of the field
+     * @param {IElement} element CDS element which represents the field
+     * @param {string} [prefix=""] Prefix of classes
+     * @returns {morph.InterfaPropertySignatureStructureceMemberStructures} Created class field declaration
+     * @memberof BaseType
+     */
+    protected createClassField(
+        name: string,
+        element: IElement,
+        types: BaseType[],
+        prefix = ""
+    ): morph.PropertyDeclarationStructure {
+        return this.createField(
+            name,
+            element,
+            types,
+            prefix,
+            morph.StructureKind.PropertySignature
+        ) as morph.PropertyDeclarationStructure;
+        /*
+        const fieldName =
+            element.canBeNull || element.type === Type.Association
+                ? `${name}?`
+                : name;
+
+        let fieldType = "unknown";
+        if (element.enum) {
+            fieldType =
+                this.sanitizeName(this.sanitizeTarget(this.name)) +
+                this.sanitizeName(name);
+        } else {
+            fieldType = this.cdsElementToType(element, types, prefix);
+        }
+
+        return {
+            kind: morph.StructureKind.Property,
+            name: fieldName,
+            type: fieldType,
+        };
+        */
+    }
+
+    /**
      * Creates a interface declaration.
      *
      * @protected
@@ -148,6 +247,14 @@ export abstract class BaseType<O = unknown> {
         types: BaseType[],
         prefix = ""
     ): morph.PropertySignatureStructure {
+        return this.createField(
+            name,
+            element,
+            types,
+            prefix,
+            morph.StructureKind.PropertySignature
+        ) as morph.PropertySignatureStructure;
+        /*
         const fieldName =
             element.canBeNull || element.type === Type.Association
                 ? `${name}?`
@@ -167,6 +274,7 @@ export abstract class BaseType<O = unknown> {
             name: fieldName,
             type: fieldType,
         };
+        */
     }
 
     /**

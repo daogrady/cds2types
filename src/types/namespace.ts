@@ -240,7 +240,8 @@ export class Namespace {
                 this.addEnumDeclarations(ed.enumDeclarationStructures, source);
             }
 
-            source.addInterface(ed.interfaceDeclarationStructure);
+            //source.addInterface(ed.interfaceDeclarationStructure);
+            source.addClass(ed.interfaceDeclarationStructure);
 
             if (!_.isEmpty(ed.actionFuncStructures)) {
                 const actionsNamespace = source.addNamespace({

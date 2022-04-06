@@ -52,6 +52,12 @@ import _ from "lodash";
  * @class CDSParser
  */
 export class CDSParser {
+    private targetJavascript: boolean;
+
+    public constructor(javascript: boolean) {
+        this.targetJavascript = javascript;
+    }
+
     /**
      * Parsed services.
      *
