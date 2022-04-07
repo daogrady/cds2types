@@ -13,6 +13,10 @@ import { Definition, IElement } from "../utils/types";
  * @template O Return type for the toType method
  */
 export abstract class BaseType<O = unknown> {
+    private danglingExtensions: Array<
+        [morph.ClassDeclarationStructure, string[]]
+    >;
+
     /**
      * Interface prefix.
      *
@@ -72,6 +76,7 @@ export abstract class BaseType<O = unknown> {
         this.namespace = namespace;
         this.name = name;
         this.definition = definition;
+        this.danglingExtensions = [];
     }
 
     /**
@@ -117,20 +122,26 @@ export abstract class BaseType<O = unknown> {
     protected createClass(
         prefix = "",
         suffix = "",
-        ext?: string // FIXME: this could be an issue!
+        ext?: string[] // FIXME: this could be an issue!
     ): morph.ClassDeclarationStructure {
         const sanitizedName = `${prefix}${this.sanitizeName(
             this.sanitizeTarget(this.name)
         )}${suffix}`;
 
-        return {
+        const clazz: morph.ClassDeclarationStructure = {
             kind: morph.StructureKind.Class,
             name: this.prefix + sanitizedName,
-            extends: ext,
+            extends: ext?.length === 1 ? ext[0] : ext?.join(","),
             properties: [],
             isExported: true,
             hasDeclareKeyword: true, // required to skip initialisation of number fields et al
         };
+
+        if (ext?.length && ext?.length > 1) {
+            this.danglingExtensions.push([clazz, ext]);
+        }
+
+        return clazz;
     }
 
     private createField(
@@ -180,27 +191,6 @@ export abstract class BaseType<O = unknown> {
             prefix,
             morph.StructureKind.PropertySignature
         ) as morph.PropertyDeclarationStructure;
-        /*
-        const fieldName =
-            element.canBeNull || element.type === Type.Association
-                ? `${name}?`
-                : name;
-
-        let fieldType = "unknown";
-        if (element.enum) {
-            fieldType =
-                this.sanitizeName(this.sanitizeTarget(this.name)) +
-                this.sanitizeName(name);
-        } else {
-            fieldType = this.cdsElementToType(element, types, prefix);
-        }
-
-        return {
-            kind: morph.StructureKind.Property,
-            name: fieldName,
-            type: fieldType,
-        };
-        */
     }
 
     /**

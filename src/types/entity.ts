@@ -73,7 +73,7 @@ export class Entity extends BaseType<IEntityDeclarationStructure> {
 
         const result: IEntityDeclarationStructure = {
             entityDeclarationStructure: this.targetJavascript
-                ? this.createClass("", "", "")
+                ? this.createClass("", "", ext)
                 : this.createInterface("", "", ext),
             //entityDeclarationStructure: this.createClass("", "", ""), //this.createInterface("", "", ext),
             enumDeclarationStructures: [],

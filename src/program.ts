@@ -51,7 +51,6 @@ export class Program {
         const source = project.createSourceFile(options.output);
 
         // Generate the actual source code.
-        console.log(options);
         this.generateCode(source, parsed, options.prefix, options.javascript);
 
         // Extract source code and format it.

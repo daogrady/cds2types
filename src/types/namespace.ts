@@ -240,19 +240,18 @@ export class Namespace {
         entityDecls: IEntityDeclarationStructure[],
         source: morph.SourceFile | morph.NamespaceDeclaration
     ): void {
+        const classes: morph.ClassDeclarationStructure[] = [];
         entityDecls.forEach((ed) => {
             if (!_.isEmpty(ed.enumDeclarationStructures)) {
                 this.addEnumDeclarations(ed.enumDeclarationStructures, source);
             }
 
-            //source.addInterface(ed.interfaceDeclarationStructure);
-            console.log("targeting js", this.targetJavascript);
-            const entity = ed.entityDeclarationStructure;
-            if (this.targetJavascript)
-                source.addClass(
-                    ed.entityDeclarationStructure as morph.ClassDeclarationStructure
-                );
-            else {
+            if (this.targetJavascript) {
+                const morphed =
+                    ed.entityDeclarationStructure as morph.ClassDeclarationStructure;
+                //source.addClass(morphed);
+                classes.push(morphed);
+            } else {
                 source.addInterface(
                     ed.entityDeclarationStructure as morph.InterfaceDeclarationStructure
                 );
@@ -270,6 +269,24 @@ export class Namespace {
                 );
             }
         });
+
+        for (const clazz of classes) {
+            for (const heirlooms of (clazz.extends as string)
+                .split(",")
+                .map((ancName) => classes.find((cls) => cls.name === ancName))
+                .filter((ancestor) => !!ancestor && ancestor.properties)
+                .map((ancestor) => ancestor?.properties)) {
+                // flatMap not available before target: es2019 :/
+                heirlooms
+                    // no duplicate properties!
+                    ?.filter(
+                        (h) => !clazz.properties?.some((p) => p.name === h.name)
+                    )
+                    .forEach((h) => clazz.properties?.push(h));
+            }
+            clazz.extends = "";
+            source.addClass(clazz);
+        }
     }
 
     /**
