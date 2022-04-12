@@ -1,4 +1,5 @@
 import * as morph from "ts-morph";
+import _ from "lodash";
 
 import { Cardinality, isType, Type } from "../utils/cds.types";
 import { Definition, IElement } from "../utils/types";
@@ -345,6 +346,10 @@ export abstract class BaseType<O = unknown> {
                 name.substring(1, name.length);
         }
 
+        if (name.includes(".")) {
+            result = _.replace(_.startCase(name), new RegExp(" ", "g"), "");
+        }
+
         return result;
     }
 
@@ -370,7 +375,16 @@ export abstract class BaseType<O = unknown> {
      */
     protected getTarget(target: string): string {
         const parts = target.split(".");
-        return parts[parts.length - 1];
+
+        let result = target;
+
+        if (_.last(parts) === "texts") {
+            result = _.join(_.takeRight(parts, 2), ".");
+        } else {
+            result = parts[parts.length - 1];
+        }
+
+        return result;
     }
 
     /**
