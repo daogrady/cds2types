@@ -249,7 +249,6 @@ export class Namespace {
             if (this.targetJavascript) {
                 const morphed =
                     ed.entityDeclarationStructure as morph.ClassDeclarationStructure;
-                //source.addClass(morphed);
                 classes.push(morphed);
             } else {
                 source.addInterface(
@@ -269,24 +268,36 @@ export class Namespace {
                 );
             }
         });
-
-        for (const clazz of classes) {
-            for (const heirlooms of (clazz.extends as string)
+        classes.forEach((clazz) => {
+            //for (const heirlooms of (clazz.extends as string)
+            (clazz.extends as string)
                 .split(",")
                 .map((ancName) => classes.find((cls) => cls.name === ancName))
                 .filter((ancestor) => !!ancestor && ancestor.properties)
-                .map((ancestor) => ancestor?.properties)) {
-                // flatMap not available before target: es2019 :/
-                heirlooms
-                    // no duplicate properties!
-                    ?.filter(
-                        (h) => !clazz.properties?.some((p) => p.name === h.name)
-                    )
-                    .forEach((h) => clazz.properties?.push(h));
-            }
+                .map((ancestor) => ancestor?.properties) //{
+                .forEach((heirlooms) =>
+                    // flatMap not available before target: es2019 :/
+                    heirlooms?.forEach((h) => {
+                        const existing = clazz.properties?.find(
+                            (p) => p.name === h.name
+                        );
+                        if (existing === undefined) {
+                            // create a copy, since we might edit the type later
+                            // and don't want to modify the parent classes' properties
+                            // by reference then.
+                            clazz.properties?.push({
+                                kind: h.kind,
+                                name: h.name,
+                                type: h.type,
+                            });
+                        } else {
+                            existing.type += ` | ${h.type}`;
+                        }
+                    })
+                );
             clazz.extends = "";
             source.addClass(clazz);
-        }
+        });
     }
 
     /**

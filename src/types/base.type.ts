@@ -131,7 +131,13 @@ export abstract class BaseType<O = unknown> {
         const clazz: morph.ClassDeclarationStructure = {
             kind: morph.StructureKind.Class,
             name: this.prefix + sanitizedName,
-            extends: ext?.length === 1 ? ext[0] : ext?.join(","),
+            extends:
+                ext?.length === 1
+                    ? ext[0]
+                    : ext
+                          ?.map((c) => c.split("."))
+                          .map((c) => c[c.length - 1])
+                          .join(","),
             properties: [],
             isExported: true,
             hasDeclareKeyword: true, // required to skip initialisation of number fields et al
