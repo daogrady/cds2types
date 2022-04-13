@@ -70,7 +70,6 @@ export class Entity extends BaseType<IEntityDeclarationStructure> {
             actionFuncStructures: [],
         };
 
-        const fields: morph.PropertySignatureStructure[] = [];
         if (this.def.elements) {
             for (const [key, value] of this.def.elements) {
                 if (value.enum) {
@@ -117,12 +116,6 @@ export class Entity extends BaseType<IEntityDeclarationStructure> {
                 }
             }
         }
-
-        const morphed: morph.InterfaceDeclarationStructure =
-            result.interfaceDeclarationStructure;
-        fields
-            .map((f) => f as morph.PropertySignatureStructure)
-            .forEach((f) => morphed.properties?.push(f));
 
         if (this.def.actions) {
             for (const [key, value] of this.def.actions) {

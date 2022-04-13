@@ -55,7 +55,7 @@ export class Namespace {
      * @type {Entity[]}
      * @memberof Namespace
      */
-    readonly entities: Entity[] = [];
+    private entities: Entity[] = [];
 
     /**
      * CDS action and function imports.
@@ -241,13 +241,11 @@ export class Namespace {
                 this.addEnumDeclarations(ed.enumDeclarationStructures, source);
             }
 
-            source.addInterface(
-                ed.entityDeclarationStructure as morph.InterfaceDeclarationStructure
-            );
+            source.addInterface(ed.interfaceDeclarationStructure);
 
             if (!_.isEmpty(ed.actionFuncStructures)) {
                 const actionsNamespace = source.addNamespace({
-                    name: `${ed.entityDeclarationStructure.name}.actions`,
+                    name: `${ed.interfaceDeclarationStructure.name}.actions`,
                     isExported: true,
                 });
 
