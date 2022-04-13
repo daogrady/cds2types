@@ -6,7 +6,7 @@ import * as path from "path";
 
 import { IOptions, IParsed } from "./utils/types";
 import { CDSParser } from "./cds.parser";
-import { ICsn } from "./utils/cds.types";
+import { ICsn, Kind } from "./utils/cds.types";
 import { Namespace } from "./types/namespace";
 import { Formatter } from "./formatter/formatter";
 import { NoopFormatter } from "./formatter/noop.formatter";
@@ -21,10 +21,12 @@ import { PrettierFormatter } from "./formatter/prettier.formatter";
 
 class JSVisitor {
     private interfacesToClasses(
-        closure: morph.NamespaceDeclaration | morph.SourceFile
+        closure: morph.NamespaceDeclaration | morph.SourceFile,
+        context: morph.SourceFile
     ) {
         closure.getInterfaces().forEach((i) => {
-            closure.addClass({
+            const clazz: morph.ClassDeclarationStructure = {
+                kind: morph.StructureKind.Class,
                 name: i.getName(),
                 properties: i.getProperties().map((p) => ({
                     name: p.getName(),
@@ -34,7 +36,40 @@ class JSVisitor {
                     .getExtends()
                     .map((ancestor) => ancestor.getText())
                     .join(","),
+            };
+
+            const tokens = (clazz.extends as string).split(",");
+            const firstAncestor = tokens[0];
+            const additionalAncestors = tokens.slice(1);
+
+            // zero or one parent is fine, everything beyond that has to be rolled out
+            additionalAncestors.forEach((fqAncestorName) => {
+                const tokens = fqAncestorName.split(".");
+                const namespaceName = tokens.slice(0, -1).join(".");
+                const ancestorName = tokens.slice(-1).join("");
+                (namespaceName === ""
+                    ? context.getInterfaces()
+                    : context.getNamespace(namespaceName)?.getInterfaces()
+                )
+                    ?.find((i) => i.getName() === ancestorName)
+                    ?.getProperties()
+                    .forEach((prop) => {
+                        const existing = clazz.properties?.find(
+                            (p) => p.name === prop.getName()
+                        );
+                        if (existing) {
+                            existing.type += `| ${prop.getType().getText()}`;
+                        } else {
+                            clazz.properties?.push({
+                                name: prop.getName(),
+                                type: prop.getType().getText(),
+                            });
+                        }
+                    });
             });
+
+            clazz.extends = firstAncestor;
+            closure.addClass(clazz);
         });
 
         // have to do a second pass, or all interfaces after the first
@@ -43,8 +78,10 @@ class JSVisitor {
     }
 
     public rectify(source: morph.SourceFile) {
-        source.getNamespaces().forEach(this.interfacesToClasses);
-        this.interfacesToClasses(source);
+        source
+            .getNamespaces()
+            .forEach((i) => this.interfacesToClasses(i, source));
+        this.interfacesToClasses(source, source);
     }
 }
 export class Program {
