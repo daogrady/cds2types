@@ -30,9 +30,6 @@ import { BaseType } from "./base.type";
  * @class Namespace
  */
 export class Namespace {
-    private targetJavascript: boolean;
-    public pendingClasses: morph.ClassDeclarationStructure[] = [];
-
     /**
      * Namespace name.
      *
@@ -112,13 +109,11 @@ export class Namespace {
     constructor(
         definitions: Map<string, Definition>,
         interfacePrefix = "",
-        name?: string,
-        targetJavascript = false
+        name?: string
     ) {
-        this.targetJavascript = targetJavascript;
         this._name = name;
         this.definitions = definitions;
-        this.extractTypes(interfacePrefix, targetJavascript);
+        this.extractTypes(interfacePrefix);
     }
 
     /**
@@ -246,15 +241,9 @@ export class Namespace {
                 this.addEnumDeclarations(ed.enumDeclarationStructures, source);
             }
 
-            if (this.targetJavascript) {
-                this.pendingClasses.push(
-                    ed.entityDeclarationStructure as morph.ClassDeclarationStructure
-                );
-            } else {
-                source.addInterface(
-                    ed.entityDeclarationStructure as morph.InterfaceDeclarationStructure
-                );
-            }
+            source.addInterface(
+                ed.entityDeclarationStructure as morph.InterfaceDeclarationStructure
+            );
 
             if (!_.isEmpty(ed.actionFuncStructures)) {
                 const actionsNamespace = source.addNamespace({
@@ -298,7 +287,7 @@ export class Namespace {
      * @param {boolean} [targetJavascript] Whether the output should be Javascript compatible.
      * @memberof Namespace
      */
-    private extractTypes(interfacePrefix = "", targetJavascript = false): void {
+    private extractTypes(interfacePrefix = ""): void {
         for (const [key, value] of this.definitions) {
             if (value == undefined) continue;
 
@@ -316,8 +305,7 @@ export class Namespace {
                     key,
                     value,
                     interfacePrefix,
-                    this.name,
-                    targetJavascript
+                    this.name
                 );
                 this.entities.push(entity);
             } else if (isEnum(value)) {

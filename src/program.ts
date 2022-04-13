@@ -80,9 +80,12 @@ export class Program {
         const source = project.createSourceFile(options.output);
 
         // Generate the actual source code.
-        this.generateCode(source, parsed, options.prefix, options.javascript);
+        this.generateCode(source, parsed, options.prefix);
 
-        new JSVisitor().rectify(source);
+        // Do conversions to be available as JS intellisense, if required
+        if (options.javascript) {
+            new JSVisitor().rectify(source);
+        }
 
         // Extract source code and format it.
         source.formatText();
@@ -131,19 +134,12 @@ export class Program {
     private generateCode(
         source: morph.SourceFile,
         parsed: IParsed,
-        interfacePrefix = "",
-        targetJavascript = false
+        interfacePrefix = ""
     ): void {
         const namespaces: Namespace[] = [];
         if (parsed.namespaces) {
             const ns = parsed.namespaces.map(
-                (n) =>
-                    new Namespace(
-                        n.definitions,
-                        interfacePrefix,
-                        n.name,
-                        targetJavascript
-                    )
+                (n) => new Namespace(n.definitions, interfacePrefix, n.name)
             );
 
             namespaces.push(...ns);
@@ -158,12 +154,7 @@ export class Program {
         }
 
         if (parsed.definitions) {
-            const ns = new Namespace(
-                parsed.definitions,
-                interfacePrefix,
-                "",
-                targetJavascript
-            );
+            const ns = new Namespace(parsed.definitions, interfacePrefix, "");
 
             namespaces.push(ns);
         }
@@ -172,54 +163,6 @@ export class Program {
             const types = _.flatten(namespaces.map((n) => n.getTypes()));
             namespace.generateCode(source, types);
         }
-
-        // rollout superclass properties if targetJS
-        namespaces.forEach((ns) =>
-            ns.pendingClasses.forEach((clazz) => {
-                (clazz.extends as string)
-                    .split(",")
-                    .map((ancName) => {
-                        const nsName = ancName
-                            .split(".")
-                            .slice(0, -1)
-                            .join(".");
-                        const clsName = ancName.split(".").slice(-1).join("");
-                        const ancNamespace =
-                            nsName === ""
-                                ? ns
-                                : namespaces.find((ns) => ns.name === nsName);
-                        return ancNamespace?.pendingClasses.find(
-                            (cls) => cls.name === clsName
-                        );
-                    })
-                    .filter((ancestor) => !!ancestor && ancestor.properties)
-                    .map((ancestor) => ancestor?.properties)
-                    .forEach((heirlooms) =>
-                        // flatMap not available before target: es2019 :/
-                        heirlooms?.forEach((h) => {
-                            const existing = clazz.properties?.find(
-                                (p) => p.name === h.name
-                            );
-                            if (existing === undefined) {
-                                // create a copy, since we might edit the type later
-                                // and don't want to modify the parent classes' properties
-                                // by reference then.
-                                clazz.properties?.push({ ...h, docs: ["foo"] });
-                            } else if (
-                                // avoid T | T | T | ...
-                                (existing.type as string).indexOf(
-                                    h.type as string
-                                ) < 0
-                            ) {
-                                existing.type += ` | ${h.type}`;
-                                existing.docs = ["ipsum"];
-                            }
-                        })
-                    );
-                clazz.extends = "";
-                source.addClass(clazz);
-            })
-        );
     }
 
     /**
