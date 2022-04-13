@@ -31,6 +31,7 @@ import { BaseType } from "./base.type";
  */
 export class Namespace {
     private targetJavascript: boolean;
+    public pendingClasses: morph.ClassDeclarationStructure[] = [];
 
     /**
      * Namespace name.
@@ -57,7 +58,7 @@ export class Namespace {
      * @type {Entity[]}
      * @memberof Namespace
      */
-    private entities: Entity[] = [];
+    readonly entities: Entity[] = [];
 
     /**
      * CDS action and function imports.
@@ -240,16 +241,15 @@ export class Namespace {
         entityDecls: IEntityDeclarationStructure[],
         source: morph.SourceFile | morph.NamespaceDeclaration
     ): void {
-        const classes: morph.ClassDeclarationStructure[] = [];
         entityDecls.forEach((ed) => {
             if (!_.isEmpty(ed.enumDeclarationStructures)) {
                 this.addEnumDeclarations(ed.enumDeclarationStructures, source);
             }
 
             if (this.targetJavascript) {
-                const morphed =
-                    ed.entityDeclarationStructure as morph.ClassDeclarationStructure;
-                classes.push(morphed);
+                this.pendingClasses.push(
+                    ed.entityDeclarationStructure as morph.ClassDeclarationStructure
+                );
             } else {
                 source.addInterface(
                     ed.entityDeclarationStructure as morph.InterfaceDeclarationStructure
@@ -267,36 +267,6 @@ export class Namespace {
                     actionsNamespace
                 );
             }
-        });
-        classes.forEach((clazz) => {
-            //for (const heirlooms of (clazz.extends as string)
-            (clazz.extends as string)
-                .split(",")
-                .map((ancName) => classes.find((cls) => cls.name === ancName))
-                .filter((ancestor) => !!ancestor && ancestor.properties)
-                .map((ancestor) => ancestor?.properties) //{
-                .forEach((heirlooms) =>
-                    // flatMap not available before target: es2019 :/
-                    heirlooms?.forEach((h) => {
-                        const existing = clazz.properties?.find(
-                            (p) => p.name === h.name
-                        );
-                        if (existing === undefined) {
-                            // create a copy, since we might edit the type later
-                            // and don't want to modify the parent classes' properties
-                            // by reference then.
-                            clazz.properties?.push({
-                                kind: h.kind,
-                                name: h.name,
-                                type: h.type,
-                            });
-                        } else {
-                            existing.type += ` | ${h.type}`;
-                        }
-                    })
-                );
-            clazz.extends = "";
-            source.addClass(clazz);
         });
     }
 
@@ -349,7 +319,6 @@ export class Namespace {
                     this.name,
                     targetJavascript
                 );
-
                 this.entities.push(entity);
             } else if (isEnum(value)) {
                 const _enum = new Enum(

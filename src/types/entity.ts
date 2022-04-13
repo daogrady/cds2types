@@ -75,7 +75,6 @@ export class Entity extends BaseType<IEntityDeclarationStructure> {
             entityDeclarationStructure: this.targetJavascript
                 ? this.createClass("", "", ext)
                 : this.createInterface("", "", ext),
-            //entityDeclarationStructure: this.createClass("", "", ""), //this.createInterface("", "", ext),
             enumDeclarationStructures: [],
             actionFuncStructures: [],
         };
