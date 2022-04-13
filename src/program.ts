@@ -64,7 +64,7 @@ export class Program {
         }
 
         // Parse compile CDS.
-        const parsed = new CDSParser(options.javascript).parse(jsonObj as ICsn);
+        const parsed = new CDSParser().parse(jsonObj as ICsn);
 
         // Remove the output file if it already exists.
         if (fs.existsSync(options.output)) {
