@@ -14,10 +14,6 @@ import { Definition, IElement } from "../utils/types";
  * @template O Return type for the toType method
  */
 export abstract class BaseType<O = unknown> {
-    private danglingExtensions: Array<
-        [morph.ClassDeclarationStructure, string[]]
-    >;
-
     /**
      * Interface prefix.
      *
@@ -77,7 +73,6 @@ export abstract class BaseType<O = unknown> {
         this.namespace = namespace;
         this.name = name;
         this.definition = definition;
-        this.danglingExtensions = [];
     }
 
     /**
@@ -108,90 +103,6 @@ export abstract class BaseType<O = unknown> {
         }
 
         return name;
-    }
-
-    /**
-     * Creates a class declaration.
-     *
-     * @protected
-     * @param {string} [prefix=""] Name prefix
-     * @param {string} [suffix=""] Name suffix
-     * @param {string[]} [ext] Extension type names
-     * @returns {morph.InterfaceDeclarationStructure} Created interface declaration
-     * @memberof BaseType
-     */
-    protected createClass(
-        prefix = "",
-        suffix = "",
-        ext?: string[]
-    ): morph.ClassDeclarationStructure {
-        const sanitizedName = `${prefix}${this.sanitizeName(
-            this.sanitizeTarget(this.name)
-        )}${suffix}`;
-
-        const clazz: morph.ClassDeclarationStructure = {
-            kind: morph.StructureKind.Class,
-            name: this.prefix + sanitizedName,
-            extends: ext?.length === 1 ? ext[0] : ext?.join(","),
-            properties: [],
-            isExported: true,
-            //hasDeclareKeyword: true, // required to skip initialisation of number fields et al
-        };
-
-        if (ext?.length && ext?.length > 1) {
-            this.danglingExtensions.push([clazz, ext]);
-        }
-
-        return clazz;
-    }
-
-    private createField(
-        name: string,
-        element: IElement,
-        types: BaseType[],
-        prefix = "",
-        kind: morph.StructureKind
-    ): { kind: morph.StructureKind; name: string; type: string } {
-        const fieldName =
-            element.canBeNull || element.type === Type.Association
-                ? `${name}?`
-                : name;
-
-        const fieldType = element.enum
-            ? this.sanitizeName(this.sanitizeTarget(this.name)) +
-              this.sanitizeName(name)
-            : this.cdsElementToType(element, types, prefix);
-
-        return {
-            kind: kind,
-            name: fieldName,
-            type: fieldType,
-        };
-    }
-
-    /**
-     * Creates a interface field declaration.
-     *
-     * @protected
-     * @param {string} name Name of the field
-     * @param {IElement} element CDS element which represents the field
-     * @param {string} [prefix=""] Prefix of classes
-     * @returns {morph.InterfaPropertySignatureStructureceMemberStructures} Created class field declaration
-     * @memberof BaseType
-     */
-    protected createClassField(
-        name: string,
-        element: IElement,
-        types: BaseType[],
-        prefix = ""
-    ): morph.PropertyDeclarationStructure {
-        return this.createField(
-            name,
-            element,
-            types,
-            prefix,
-            morph.StructureKind.PropertySignature
-        ) as morph.PropertyDeclarationStructure;
     }
 
     /**
@@ -238,14 +149,6 @@ export abstract class BaseType<O = unknown> {
         types: BaseType[],
         prefix = ""
     ): morph.PropertySignatureStructure {
-        return this.createField(
-            name,
-            element,
-            types,
-            prefix,
-            morph.StructureKind.PropertySignature
-        ) as morph.PropertySignatureStructure;
-        /*
         const fieldName =
             element.canBeNull || element.type === Type.Association
                 ? `${name}?`
@@ -265,7 +168,6 @@ export abstract class BaseType<O = unknown> {
             name: fieldName,
             type: fieldType,
         };
-        */
     }
 
     /**

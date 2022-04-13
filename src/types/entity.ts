@@ -17,7 +17,7 @@ import {
  * @interface IEntityDeclarationStructure
  */
 export interface IEntityDeclarationStructure {
-    entityDeclarationStructure: morph.InterfaceDeclarationStructure;
+    interfaceDeclarationStructure: morph.InterfaceDeclarationStructure;
     enumDeclarationStructures: morph.EnumDeclarationStructure[];
     actionFuncStructures: IActionFunctionDeclarationStructure[];
 }
@@ -65,7 +65,7 @@ export class Entity extends BaseType<IEntityDeclarationStructure> {
         const extFields = this.getExtensionInterfaceFields(types);
 
         const result: IEntityDeclarationStructure = {
-            entityDeclarationStructure: this.createInterface("", "", ext),
+            interfaceDeclarationStructure: this.createInterface("", "", ext),
             enumDeclarationStructures: [],
             actionFuncStructures: [],
         };
@@ -78,8 +78,7 @@ export class Entity extends BaseType<IEntityDeclarationStructure> {
                         this.createEnumDeclaration(key, value)
                     );
 
-                    //result.entityDeclarationStructure.properties?.push(
-                    fields.push(
+                    result.interfaceDeclarationStructure.properties?.push(
                         this.createInterfaceField(
                             key,
                             value,
@@ -95,9 +94,8 @@ export class Entity extends BaseType<IEntityDeclarationStructure> {
                             types,
                             this.prefix
                         );
-                        fields.push(field);
 
-                        result.entityDeclarationStructure.properties?.push(
+                        result.interfaceDeclarationStructure.properties?.push(
                             field
                         );
 
@@ -111,7 +109,7 @@ export class Entity extends BaseType<IEntityDeclarationStructure> {
                                 "_",
                                 value
                             );
-                            result.entityDeclarationStructure.properties?.push(
+                            result.interfaceDeclarationStructure.properties?.push(
                                 ...fields
                             );
                         }
@@ -121,7 +119,7 @@ export class Entity extends BaseType<IEntityDeclarationStructure> {
         }
 
         const morphed: morph.InterfaceDeclarationStructure =
-            result.entityDeclarationStructure;
+            result.interfaceDeclarationStructure;
         fields
             .map((f) => f as morph.PropertySignatureStructure)
             .forEach((f) => morphed.properties?.push(f));
