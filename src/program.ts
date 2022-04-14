@@ -28,6 +28,7 @@ class JSVisitor {
             const clazz: morph.ClassDeclarationStructure = {
                 kind: morph.StructureKind.Class,
                 name: i.getName(),
+                isExported: true,
                 properties: i.getProperties().map((p) => ({
                     name: p.getName(),
                     type: p.getType().getText(),
@@ -38,37 +39,38 @@ class JSVisitor {
                     .join(","),
             };
 
-            const tokens = (clazz.extends as string).split(",");
-            const firstAncestor = tokens[0];
-            const additionalAncestors = tokens.slice(1);
+            const ancestors = (clazz.extends as string).split(",");
+            if (ancestors.length > 1) {
+                // zero or one parent is fine, everything beyond that has to be rolled out
+                ancestors.forEach((fqAncestorName) => {
+                    const tokens = fqAncestorName.split(".");
+                    const namespaceName = tokens.slice(0, -1).join(".");
+                    const ancestorName = tokens.slice(-1).join("");
+                    (namespaceName === ""
+                        ? context.getInterfaces()
+                        : context.getNamespace(namespaceName)?.getInterfaces()
+                    )
+                        ?.find((i) => i.getName() === ancestorName)
+                        ?.getProperties()
+                        .forEach((prop) => {
+                            const existing = clazz.properties?.find(
+                                (p) => p.name === prop.getName()
+                            );
+                            if (existing) {
+                                existing.type += `| ${prop
+                                    .getType()
+                                    .getText()}`;
+                            } else {
+                                clazz.properties?.push({
+                                    name: prop.getName(),
+                                    type: prop.getType().getText(),
+                                });
+                            }
+                        });
+                });
+                clazz.extends = "";
+            }
 
-            // zero or one parent is fine, everything beyond that has to be rolled out
-            additionalAncestors.forEach((fqAncestorName) => {
-                const tokens = fqAncestorName.split(".");
-                const namespaceName = tokens.slice(0, -1).join(".");
-                const ancestorName = tokens.slice(-1).join("");
-                (namespaceName === ""
-                    ? context.getInterfaces()
-                    : context.getNamespace(namespaceName)?.getInterfaces()
-                )
-                    ?.find((i) => i.getName() === ancestorName)
-                    ?.getProperties()
-                    .forEach((prop) => {
-                        const existing = clazz.properties?.find(
-                            (p) => p.name === prop.getName()
-                        );
-                        if (existing) {
-                            existing.type += `| ${prop.getType().getText()}`;
-                        } else {
-                            clazz.properties?.push({
-                                name: prop.getName(),
-                                type: prop.getType().getText(),
-                            });
-                        }
-                    });
-            });
-
-            clazz.extends = firstAncestor;
             closure.addClass(clazz);
         });
 
