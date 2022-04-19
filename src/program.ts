@@ -2,7 +2,7 @@ import _ from "lodash";
 import cds from "@sap/cds";
 import * as fs from "fs-extra";
 import * as morph from "ts-morph";
-import * as path from "path";
+import path from "path";
 
 import { IOptions, IParsed } from "./utils/types";
 import { CDSParser } from "./cds.parser";
@@ -31,7 +31,13 @@ class JSVisitor {
                 isExported: true,
                 properties: i.getProperties().map((p) => ({
                     name: p.getName(),
-                    type: p.getType().getText(),
+                    type: ((): string => {
+                        try {
+                            return p.getType().getText();
+                        } catch {
+                            return "any";
+                        }
+                    })(),
                 })),
                 extends: i
                     .getExtends()
@@ -40,7 +46,7 @@ class JSVisitor {
             };
 
             const ancestors = (clazz.extends as string).split(",");
-            if (ancestors.length > 1) {
+            if (ancestors.length > 0) {
                 // zero or one parent is fine, everything beyond that has to be rolled out
                 ancestors.forEach((fqAncestorName) => {
                     const tokens = fqAncestorName.split(".");
@@ -82,7 +88,7 @@ class JSVisitor {
     public rectify(source: morph.SourceFile) {
         source
             .getNamespaces()
-            .forEach((i) => this.interfacesToClasses(i, source));
+            .forEach((ns) => this.interfacesToClasses(ns, source));
         this.interfacesToClasses(source, source);
     }
 }
@@ -124,15 +130,32 @@ export class Program {
         // Do conversions to be available as JS intellisense, if required
         if (options.javascript) {
             new JSVisitor().rectify(source);
+            source.getNamespaces().forEach(async (ns) => {
+                const text = ns
+                    .getClasses()
+                    .map((c) => c.getText())
+                    .join("\n");
+                const formattedText = await formatter.format(text);
+                const directory = path.join(
+                    options.output,
+                    ...ns.getName().split(".")
+                );
+                await fs.mkdir(directory, { recursive: true });
+                console.log(directory);
+                await this.writeSource(
+                    path.join(directory, "index.d.ts"),
+                    formattedText
+                );
+            });
+        } else {
+            // Extract source code and format it.
+            source.formatText();
+            const text = source.getFullText();
+            const formattedText = await formatter.format(text);
+
+            // Write the actual source file.
+            await this.writeSource(options.output, formattedText);
         }
-
-        // Extract source code and format it.
-        source.formatText();
-        const text = source.getFullText();
-        const formattedText = await formatter.format(text);
-
-        // Write the actual source file.
-        await this.writeSource(options.output, formattedText);
     }
 
     /**
