@@ -18,6 +18,13 @@ import { PrettierFormatter } from "./formatter/prettier.formatter";
  * @export
  * @class Program
  */
+const getTypeText = (p) => {
+    try {
+        return p.getType().getText();
+    } catch {
+        return "any";
+    }
+};
 
 class JSVisitor {
     private interfacesToClasses(
@@ -31,13 +38,7 @@ class JSVisitor {
                 isExported: true,
                 properties: i.getProperties().map((p) => ({
                     name: p.getName(),
-                    type: ((): string => {
-                        try {
-                            return p.getType().getText();
-                        } catch {
-                            return "any";
-                        }
-                    })(),
+                    type: getTypeText(p),
                 })),
                 extends: i
                     .getExtends()
@@ -63,13 +64,19 @@ class JSVisitor {
                                 (p) => p.name === prop.getName()
                             );
                             if (existing) {
-                                existing.type += `| ${prop
-                                    .getType()
-                                    .getText()}`;
+                                const sep = " | ";
+                                const tt = getTypeText(prop);
+                                if (
+                                    !(existing.type as string)
+                                        .split(sep)
+                                        .includes(tt)
+                                ) {
+                                    existing.type += ` | ${tt}`;
+                                }
                             } else {
                                 clazz.properties?.push({
                                     name: prop.getName(),
-                                    type: prop.getType().getText(),
+                                    type: getTypeText(prop), //prop.getType().getText(),
                                 });
                             }
                         });
