@@ -25,13 +25,16 @@ const getTypeText = (p) => {
         return "any";
     }
 };
-
 class JSVisitor {
     private interfacesToClasses(
-        closure: morph.NamespaceDeclaration | morph.SourceFile,
-        context: morph.SourceFile
+        sourceClosure: morph.NamespaceDeclaration | morph.SourceFile,
+        context: morph.SourceFile,
+        destinationClosure:
+            | morph.NamespaceDeclaration
+            | morph.SourceFile = sourceClosure,
+        removeFromSource = true
     ) {
-        closure.getInterfaces().forEach((i) => {
+        sourceClosure.getInterfaces().forEach((i) => {
             const clazz: morph.ClassDeclarationStructure = {
                 kind: morph.StructureKind.Class,
                 name: i.getName(),
@@ -71,12 +74,12 @@ class JSVisitor {
                                         .split(sep)
                                         .includes(tt)
                                 ) {
-                                    existing.type += ` | ${tt}`;
+                                    existing.type += sep + tt;
                                 }
                             } else {
                                 clazz.properties?.push({
                                     name: prop.getName(),
-                                    type: getTypeText(prop), //prop.getType().getText(),
+                                    type: getTypeText(prop),
                                 });
                             }
                         });
@@ -84,12 +87,14 @@ class JSVisitor {
                 clazz.extends = "";
             }
 
-            closure.addClass(clazz);
+            destinationClosure.addClass(clazz);
         });
 
         // have to do a second pass, or all interfaces after the first
         // will be marked as "forgotten" and cause trouble
-        closure.getInterfaces().forEach((i) => i.remove());
+        if (removeFromSource) {
+            sourceClosure.getInterfaces().forEach((i) => i.remove());
+        }
     }
 
     public rectify(source: morph.SourceFile) {
@@ -97,6 +102,26 @@ class JSVisitor {
             .getNamespaces()
             .forEach((ns) => this.interfacesToClasses(ns, source));
         this.interfacesToClasses(source, source);
+    }
+
+    public generateStubs(
+        ns: morph.NamespaceDeclaration,
+        target: morph.SourceFile,
+        context: morph.SourceFile
+    ) {
+        // FIXME: switch for commonjs vs esm
+        this.interfacesToClasses(ns, context, target, false);
+        // remove types for JS compliance
+        const classes = target.getClasses();
+        const exports = classes
+            .filter((c) => c.isExported())
+            .map((c) => c.getName());
+        classes.forEach((c) => {
+            c.getProperties().forEach((p) => p.setType(""));
+            c.setIsExported(false);
+        });
+
+        target.addStatements(`module.export = {${exports.join(",\n")}}`);
     }
 }
 export class Program {
@@ -136,10 +161,11 @@ export class Program {
 
         // Do conversions to be available as JS intellisense, if required
         if (options.javascript) {
-            new JSVisitor().rectify(source);
+            //new JSVisitor().rectify(source);
             source.getNamespaces().forEach(async (ns) => {
+                // unwrap
                 const text = ns
-                    .getClasses()
+                    .getInterfaces()
                     .map((c) => c.getText())
                     .join("\n");
                 const formattedText = await formatter.format(text);
@@ -153,6 +179,12 @@ export class Program {
                     path.join(directory, "index.d.ts"),
                     formattedText
                 );
+
+                const sourceStub = source
+                    .getProject()
+                    .createSourceFile(path.join(directory, "index.js"));
+                new JSVisitor().generateStubs(ns, sourceStub, source);
+                sourceStub.save();
             });
         } else {
             // Extract source code and format it.

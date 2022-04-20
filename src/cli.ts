@@ -40,6 +40,7 @@ function main(): void {
     } else {
         const options = cli.opts() as IOptions;
         new Program().run(options).catch((error: Error) => {
+            console.log(error);
             const debugHint =
                 "Please use the debug flag (-d, --debug) for a detailed error message.";
             console.log(
