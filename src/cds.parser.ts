@@ -43,7 +43,7 @@ import {
     ITypeAliasDefinition,
 } from "./utils/types";
 
-import _ from "lodash";
+import * as _ from "./array.util";
 
 /**
  * Parses a compiled CDS JSON object.

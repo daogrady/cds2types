@@ -1,4 +1,4 @@
-import _, { min, split } from "lodash";
+import * as _ from "./array.util";
 import cds from "@sap/cds";
 import * as fs from "fs-extra";
 import * as morph from "ts-morph";

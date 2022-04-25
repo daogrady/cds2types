@@ -17,7 +17,7 @@ import {
 import { Entity, IEntityDeclarationStructure } from "./entity";
 import { TypeAlias } from "./type.alias";
 import { Enum } from "./enum";
-import _ from "lodash";
+import * as _ from "../array.util";
 import { BaseType } from "./base.type";
 
 /**

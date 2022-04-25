@@ -1,5 +1,5 @@
 import * as morph from "ts-morph";
-import _ from "lodash";
+import * as _ from "../array.util";
 
 import { Cardinality, isType, Type } from "../utils/cds.types";
 import { Definition, IElement } from "../utils/types";
