@@ -1,23 +1,18 @@
-import _ from "lodash";
+import _, { min, split } from "lodash";
 import cds from "@sap/cds";
 import * as fs from "fs-extra";
 import * as morph from "ts-morph";
-import path from "path";
+import path, { resolve } from "path";
 
-import { IOptions, IParsed } from "./utils/types";
+import { Definition, IOptions, IParsed } from "./utils/types";
 import { CDSParser } from "./cds.parser";
 import { ICsn } from "./utils/cds.types";
 import { Namespace } from "./types/namespace";
 import { Formatter } from "./formatter/formatter";
 import { NoopFormatter } from "./formatter/noop.formatter";
 import { PrettierFormatter } from "./formatter/prettier.formatter";
+import { CSN } from "@sap/cds/apis/csn";
 
-/**
- * Main porgram class.
- *
- * @export
- * @class Program
- */
 const getTypeText = (p): string => {
     try {
         return p.getType().getText();
@@ -32,6 +27,157 @@ const splitNamespace = (fqName: string): [string, string] => {
     const ancestorName = tokens.slice(-1).join("");
     return [namespaceName, ancestorName];
 };
+
+const addOrAmendProperty = (
+    clazz: morph.ClassDeclarationStructure,
+    prop: morph.PropertySignature
+) => {
+    const existing = clazz.properties?.find((p) => p.name === prop.getName());
+    if (existing) {
+        const sep = " | ";
+        const tt = getTypeText(prop);
+        if (!(existing.type as string).split(sep).includes(tt)) {
+            existing.type += sep + tt;
+        }
+    } else {
+        clazz.properties?.push({
+            name: prop.getName(),
+            type: getTypeText(prop),
+        });
+    }
+};
+
+class ModuleQualifier {
+    private module: string;
+    public readonly clazz: string | undefined;
+
+    constructor(path: string, containsClass = false) {
+        // TODO: collect imports from the using-directive, instead of using the extends parts
+        if (!path) {
+            //throw Error("");
+        }
+        if (containsClass) {
+            [this.module, this.clazz] = splitNamespace(path);
+        } else {
+            this.module = path;
+        }
+    }
+
+    public getNamespace(): string {
+        return this.module;
+    }
+
+    public getDirectory(): string {
+        return this.getNamespace().replace(/\./g, "/");
+    }
+
+    public getAlias(): string {
+        return [this.getNamespace().replace(/\./g, "_"), this.clazz]
+            .filter((x) => !!x)
+            .join(".");
+    }
+
+    public getRelativePath(rel: string): string {
+        console.log(
+            "RELATIVE",
+            rel,
+            " -> ",
+            this.getDirectory(),
+            ": ",
+            path.relative(rel, this.getDirectory())
+        );
+        return path.relative(rel, this.getDirectory());
+    }
+}
+
+const resolveImport = (name: string, rel: string, cson: CSN): string => {
+    if (cson.definitions !== undefined) {
+        type ExtDefinition = Definition & { $location };
+        const def: ExtDefinition & { $location } = cson.definitions[
+            name
+        ] as unknown as ExtDefinition;
+    }
+    return name;
+};
+
+const getImportPaths = (
+    ns: morph.NamespaceDeclaration,
+    rel: string,
+    source: morph.SourceFile,
+    cson: CSN
+): ModuleQualifier[] => {
+    return [
+        ...new Set(
+            ns
+                .getInterfaces()
+                .map(
+                    (i) =>
+                        i
+                            .getExtends()
+                            .filter((e) => !!e.getText())
+                            .map((e) => resolveImport(e.getText(), rel, cson))
+                            .map((e) => splitNamespace(e)[0])
+                    //.map((e) => splitNamespace(e.getText())[0])
+                )
+                .reduce((prev, curr) => prev.concat(curr), []) // flatten
+        ),
+    ] // extract unique module paths
+        .map((p) => new ModuleQualifier(p))
+        .filter((q) => !!q.getRelativePath(rel)); // empty rel path == same namespace
+};
+
+const writeNamespace = async (
+    ns: morph.NamespaceDeclaration,
+    output: string,
+    source: morph.SourceFile,
+    cson: CSN
+) => {
+    // generate .d.ts
+    const nsParts = ns.getName().split(".");
+    const rel = path.join(...nsParts);
+    const directory =
+        ns.getName() === rootNamespaceName ? output : path.join(output, rel);
+
+    // unwrap from namespace (it is its own file now)
+    const dTsFile = source
+        .getProject()
+        .createSourceFile(path.join(directory, "index.d.ts"));
+
+    getImportPaths(ns, rel, source, cson).forEach((imp) =>
+        dTsFile.addImportDeclaration({
+            moduleSpecifier: imp.getRelativePath(rel),
+            namespaceImport: imp.getAlias(),
+        })
+    );
+
+    const nsmq = new ModuleQualifier(ns.getName());
+    ns.getInterfaces().forEach((i) =>
+        dTsFile.addInterface({
+            name: i.getName(),
+            extends: i.getExtends().map((e) => {
+                const mq = new ModuleQualifier(e.getText(), true);
+                return mq.getNamespace() === nsmq.getNamespace()
+                    ? (mq.clazz as string)
+                    : mq.getAlias();
+            }),
+            isExported: true,
+            properties: i.getProperties().map((p) => ({
+                name: p.getName(),
+                type: getTypeText(p),
+            })),
+        })
+    );
+    dTsFile.save();
+
+    // generate .js
+    const jsFile = source
+        .getProject()
+        .createSourceFile(path.join(directory, "index.js"));
+    new JSVisitor().generateStubs(ns, jsFile, source);
+    jsFile.save();
+};
+
+const rootNamespaceName = "ROOT";
 
 class JSVisitor {
     private interfacesToClasses(
@@ -59,36 +205,14 @@ class JSVisitor {
 
             const ancestors = (clazz.extends as string).split(",");
             ancestors.forEach((fqAncestorName) => {
-                const tokens = fqAncestorName.split(".");
-                const namespaceName = tokens.slice(0, -1).join(".");
-                const ancestorName = tokens.slice(-1).join("");
-                (namespaceName === ""
+                const [nsName, ancestorName] = splitNamespace(fqAncestorName);
+                (nsName === ""
                     ? context.getInterfaces()
-                    : context.getNamespace(namespaceName)?.getInterfaces()
+                    : context.getNamespace(nsName)?.getInterfaces()
                 )
                     ?.find((i) => i.getName() === ancestorName)
                     ?.getProperties()
-                    .forEach((prop) => {
-                        const existing = clazz.properties?.find(
-                            (p) => p.name === prop.getName()
-                        );
-                        if (existing) {
-                            const sep = " | ";
-                            const tt = getTypeText(prop);
-                            if (
-                                !(existing.type as string)
-                                    .split(sep)
-                                    .includes(tt)
-                            ) {
-                                existing.type += sep + tt;
-                            }
-                        } else {
-                            clazz.properties?.push({
-                                name: prop.getName(),
-                                type: getTypeText(prop),
-                            });
-                        }
-                    });
+                    .forEach((p) => addOrAmendProperty(clazz, p));
             });
             clazz.extends = "";
 
@@ -116,7 +240,7 @@ class JSVisitor {
     ) {
         // FIXME: switch for commonjs vs esm
         this.interfacesToClasses(ns, context, target, false);
-        // remove types for JS compliance
+        // remove types and keywords for JS compliance
         const classes = target.getClasses();
         const exports = classes
             .filter((c) => c.isExported())
@@ -129,6 +253,13 @@ class JSVisitor {
         target.addStatements(`module.export = {${exports.join(",\n  ")}}`);
     }
 }
+
+/**
+ * Main porgram class.
+ *
+ * @export
+ * @class Program
+ */
 export class Program {
     /**
      * Main method.
@@ -138,6 +269,8 @@ export class Program {
      */
     public async run(options: IOptions): Promise<void> {
         // Load compiled CDS.
+        // FIXME: swap out
+        const cson: CSN = await cds.load(options.cds);
         const jsonObj = await this.loadCdsAndConvertToJSON(options.cds);
 
         // Write the compiled CDS JSON to disc for debugging.
@@ -167,76 +300,34 @@ export class Program {
         // Do conversions to be available as JS intellisense, if required
         if (options.javascript) {
             //new JSVisitor().rectify(source);
-            source.getNamespaces().forEach(async (ns) => {
-                // generate .d.ts
-                // collect required imports
-                const nsParts = ns.getName().split(".");
-                const rel = path.join(...nsParts);
-                const directory = path.join(options.output, rel);
-
-                const imports = new Set(
-                    ns
-                        .getInterfaces()
-                        .map((i) =>
-                            i
-                                .getExtends()
-                                .map((ex) => splitNamespace(ex.getText())[0])
-                        ) // retrieve namespace part
-                        .reduce((prev, curr) => prev.concat(curr), []) // flatten
-                        .map((p) => "../".repeat(nsParts.length - 1) + rel) // to relative path
-                );
-                console.log(imports);
-
-                // unwrap from namespace (it is its own file now)
-
-                /*
-                const text = ns
-                    .getInterfaces()
-                    .map((i) => i.getText())
-                    .join("\n");
-                const formattedText = await formatter.format(text);
-                
-
-                console.log(`imports in ${ns.getName()}: `, imports);
-
-                await fs.mkdir(directory, { recursive: true });
-                console.log(directory);
-                await this.writeSource(
-                    path.join(directory, "index.d.ts"),
-                    formattedText
-                );
-                */
-
-                const dTsFile = source
-                    .getProject()
-                    .createSourceFile(path.join(directory, "index.d.ts"));
-
-                imports.forEach((imp) =>
-                    dTsFile.addImportDeclaration({
-                        moduleSpecifier: imp,
-                    })
-                );
-                imports.forEach((imp) => console.log(imp));
-
-                ns.getInterfaces().forEach((i) =>
-                    dTsFile.addInterface({
-                        name: i.getName(),
-                        isExported: true,
-                        properties: i.getProperties().map((p) => ({
-                            name: p.getName(),
-                            type: getTypeText(p),
-                        })),
-                    })
-                );
-                dTsFile.save();
-
-                // generate .js
-                const jsFile = source
-                    .getProject()
-                    .createSourceFile(path.join(directory, "index.js"));
-                new JSVisitor().generateStubs(ns, jsFile, source);
-                jsFile.save();
+            source.addNamespace({
+                name: rootNamespaceName,
             });
+            source.getInterfaces().forEach((i) =>
+                source.getNamespace(rootNamespaceName)?.addInterface({
+                    name: i.getName(),
+                    extends: i.getExtends().map((e) => {
+                        return "FOO";
+                        /*
+                    const mq = new ModuleQualifier(e.getText(), true);
+                    return mq.getNamespace() === nsmq.getNamespace()
+                        ? (mq.clazz as string)
+                        : mq.getAlias();
+                    */
+                    }),
+                    isExported: true,
+                    properties: i.getProperties().map((p) => ({
+                        name: p.getName(),
+                        type: getTypeText(p),
+                    })),
+                })
+            );
+
+            source
+                .getNamespaces()
+                .forEach((ns) =>
+                    writeNamespace(ns, options.output, source, cson)
+                );
         } else {
             // Extract source code and format it.
             source.formatText();
