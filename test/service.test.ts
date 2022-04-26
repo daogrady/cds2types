@@ -27,12 +27,13 @@ const arrayUsingEntity: CatalogService.IArrayUsingEntity = {
         {
             idComposition: "",
             quantityComposition: 1,
-            up__ID: "",
+            //up__ID: "",
         },
     ],
 };
 
 const book: CatalogService.IBooks = {
+    texts: [],
     ID: 1,
     title: "",
     descr: "",
@@ -41,18 +42,20 @@ const book: CatalogService.IBooks = {
         lastname: "",
     },
     genre: {
+        texts: [],
         ID: 1,
         parent: {
             ID: 2,
             children: [],
             name: "",
             descr: "",
+            texts: [],
         },
         name: "",
         descr: "",
         children: [],
     },
-    genre_ID: 1,
+    //genre_ID: 1,
     stock: 1,
     price: 1,
     currency: {
@@ -60,13 +63,15 @@ const book: CatalogService.IBooks = {
         descr: "",
         name: "",
         symbol: "",
+        texts: [],
     },
-    currency_code: "",
+    //currency_code: "",
 };
 
-const authorAddRatingAction: CatalogService.IBooks.actions.IActionAddRatingParams = {
-    stars: 1,
-};
+const authorAddRatingAction: CatalogService.IBooks.actions.IActionAddRatingParams =
+    {
+        stars: 1,
+    };
 
 const authorGetViewsCountFunction: CatalogService.IBooks.actions.FuncGetViewsCountReturn = 1;
 
