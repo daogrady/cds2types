@@ -6,7 +6,7 @@
         "rootDir": "./",
         "downlevelIteration": true,
         "strict": true,
-        "types": ["node"],
+        "types": ["node", "jest"],
         "noImplicitAny": false,
         "esModuleInterop": true,
         "removeComments": true
