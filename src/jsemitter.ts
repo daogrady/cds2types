@@ -14,62 +14,6 @@ import { CSN } from "@sap/cds/apis/csn";
 const ROOT_NAMESPACE_NAME = "$ROOT$";
 
 /**
- * Retrieves the type text from a property.
- * @param p Property to retrieve the type for.
- * @returns Type of property, if possible, else "any".
- */
-const getTypeText = (p): string => {
-    try {
-        return p.getType().getText();
-    } catch {
-        return "any";
-    }
-};
-
-/**
- * Splits namespace off an import.
- * @param fqName fully qualified import name, i.e. "foo.bar.A".
- * @returns tuple of the namespace and the import, i.e. ["foo.bar", "A"]
- */
-const splitNamespace = (fqName: string): [string, string] => {
-    const tokens = fqName.split(".");
-    const namespaceName = tokens.slice(0, -1).join(".");
-    const ancestorName = tokens.slice(-1).join("");
-    return [namespaceName, ancestorName];
-};
-
-/**
- * Adds or amends a property to a class.
- * That is: if...
- * (1) the class does not know the property,
- * it will be added.
- * (2) the property is known by name but with another type,
- * its type will be added as option.
- * (3) the property is known by both name and type,
- * nothing will be done.
- * @param clazz The class to add the property to.
- * @param prop The property to add.
- */
-const addOrAmendProperty = (
-    clazz: morph.ClassDeclarationStructure,
-    prop: morph.PropertySignature
-) => {
-    const existing = clazz.properties?.find((p) => p.name === prop.getName());
-    if (existing) {
-        const sep = " | ";
-        const tt = getTypeText(prop);
-        if (!(existing.type as string).split(sep).includes(tt)) {
-            existing.type += sep + tt;
-        }
-    } else {
-        clazz.properties?.push({
-            name: prop.getName(),
-            type: getTypeText(prop),
-        });
-    }
-};
-
-/**
  * Module Qualifier that points to either a module
  * or a class/ interface within the module. I.e.
  *
@@ -153,6 +97,151 @@ const resolveImport = (name: string, rel: string, cson: CSN): string => {
         ] as unknown as ExtDefinition;
     }
     return name;
+};
+
+/**
+ * Converts all interfaces (which don't exist in plain JS)
+ * to classes.
+ * @param sourceClosure either a namespace or a top level source to collect the interfaces from.
+ * @param context top level source to resolve from.
+ * @param destinationClosure namespace or top leve source to write the classes into.
+ * @param removeFromSource if set to true, the interfaces will be removed from the source closure after conversion.
+ */
+const interfacesToClasses = (
+    sourceClosure: morph.NamespaceDeclaration | morph.SourceFile,
+    context: morph.SourceFile,
+    destinationClosure:
+        | morph.NamespaceDeclaration
+        | morph.SourceFile = sourceClosure,
+    removeFromSource = true
+) => {
+    sourceClosure.getInterfaces().forEach((i) => {
+        const clazz: morph.ClassDeclarationStructure = {
+            kind: morph.StructureKind.Class,
+            name: i.getName(),
+            isExported: true,
+            properties: i.getProperties().map((p) => ({
+                name: p.getName(),
+                type: getTypeText(p),
+            })),
+            extends: i
+                .getExtends()
+                .map((ancestor) => ancestor.getText())
+                .join(","),
+        };
+
+        const ancestors = (clazz.extends as string).split(",");
+        ancestors.forEach((fqAncestorName) => {
+            const [nsName, ancestorName] = splitNamespace(fqAncestorName);
+            (nsName === ""
+                ? context.getInterfaces()
+                : context.getNamespace(nsName)?.getInterfaces()
+            )
+                ?.find((i) => i.getName() === ancestorName)
+                ?.getProperties()
+                .forEach((p) => addOrAmendProperty(clazz, p));
+        });
+        clazz.extends = "";
+
+        destinationClosure.addClass(clazz);
+    });
+
+    // have to do a second pass, or all interfaces after the first
+    // will be marked as "forgotten" and cause trouble
+    if (removeFromSource) {
+        sourceClosure.getInterfaces().forEach((i) => i.remove());
+    }
+};
+
+/**
+ * Converts TS compliant code to JS compliant code.
+ * @param source source file to convert.
+ */
+const rectify = (source: morph.SourceFile) => {
+    source.getNamespaces().forEach((ns) => interfacesToClasses(ns, source));
+    interfacesToClasses(source, source);
+};
+
+/**
+ * Creates JS class stubs. Removes all TS specific syntax.
+ * @param ns namespace to create the classes for.
+ * @param target source to generate the stubs into.
+ * @param context context file.
+ */
+const generateStubs = (
+    ns: morph.NamespaceDeclaration,
+    target: morph.SourceFile,
+    context: morph.SourceFile
+) => {
+    // FIXME: switch for commonjs vs esm
+    interfacesToClasses(ns, context, target, false);
+    // remove types and keywords for JS compliance
+    const classes = target.getClasses();
+    const exports = classes
+        .filter((c) => c.isExported())
+        .map((c) => c.getName());
+    classes.forEach((c) => {
+        c.getProperties().forEach((p) => p.setType(""));
+        c.setIsExported(false);
+    });
+
+    target.addStatements(`module.exports = {${exports.join(",\n  ")}}`);
+};
+
+/**
+ * Retrieves the type text from a property.
+ * @param p Property to retrieve the type for.
+ * @returns Type of property, if possible, else "any".
+ */
+const getTypeText = (p): string => {
+    try {
+        return p.getType().getText();
+    } catch {
+        return "any";
+    }
+};
+
+/**
+ * Splits namespace off an import.
+ * @param fqName fully qualified import name, i.e. "foo.bar.A".
+ * @returns tuple of the namespace and the import, i.e. ["foo.bar", "A"]
+ */
+const splitNamespace = (fqName: string): [string, string] => {
+    const tokens = fqName.split(".");
+    const namespaceName = tokens.slice(0, -1).join(".");
+    const ancestorName = tokens.slice(-1).join("");
+    return [namespaceName, ancestorName];
+};
+
+/**
+ * Adds or amends a property to a class.
+ * That is: if...
+ * (1) the class does not know the property,
+ * it will be added.
+ * (2) the property is known by name but with another type,
+ * its type will be added as option.
+ * (3) the property is known by both name and type,
+ * nothing will be done.
+ * @param clazz The class to add the property to.
+ * @param prop The property to add.
+ */
+const addOrAmendProperty = (
+    clazz: morph.ClassDeclarationStructure,
+    prop: morph.PropertySignature
+) => {
+    const existing = clazz.properties?.find((p) => p.name === prop.getName());
+    if (existing) {
+        const sep = " | ";
+        const tt = getTypeText(prop);
+        if (!(existing.type as string).split(sep).includes(tt)) {
+            existing.type += sep + tt;
+        }
+    } else {
+        clazz.properties?.push({
+            name: prop.getName(),
+            type: getTypeText(prop),
+        });
+    }
 };
 
 /**
@@ -245,102 +334,9 @@ const writeNamespace = async (
     const jsFile = source
         .getProject()
         .createSourceFile(path.join(directory, "index.js"));
-    new JSVisitor().generateStubs(ns, jsFile, source);
+    generateStubs(ns, jsFile, source);
     jsFile.save();
 };
-
-class JSVisitor {
-    /**
-     * Converts all interfaces (which don't exist in plain JS)
-     * to classes.
-     * @param sourceClosure either a namespace or a top level source to collect the interfaces from.
-     * @param context top level source to resolve from.
-     * @param destinationClosure namespace or top leve source to write the classes into.
-     * @param removeFromSource if set to true, the interfaces will be removed from the source closure after conversion.
-     */
-    private interfacesToClasses(
-        sourceClosure: morph.NamespaceDeclaration | morph.SourceFile,
-        context: morph.SourceFile,
-        destinationClosure:
-            | morph.NamespaceDeclaration
-            | morph.SourceFile = sourceClosure,
-        removeFromSource = true
-    ) {
-        sourceClosure.getInterfaces().forEach((i) => {
-            const clazz: morph.ClassDeclarationStructure = {
-                kind: morph.StructureKind.Class,
-                name: i.getName(),
-                isExported: true,
-                properties: i.getProperties().map((p) => ({
-                    name: p.getName(),
-                    type: getTypeText(p),
-                })),
-                extends: i
-                    .getExtends()
-                    .map((ancestor) => ancestor.getText())
-                    .join(","),
-            };
-
-            const ancestors = (clazz.extends as string).split(",");
-            ancestors.forEach((fqAncestorName) => {
-                const [nsName, ancestorName] = splitNamespace(fqAncestorName);
-                (nsName === ""
-                    ? context.getInterfaces()
-                    : context.getNamespace(nsName)?.getInterfaces()
-                )
-                    ?.find((i) => i.getName() === ancestorName)
-                    ?.getProperties()
-                    .forEach((p) => addOrAmendProperty(clazz, p));
-            });
-            clazz.extends = "";
-
-            destinationClosure.addClass(clazz);
-        });
-
-        // have to do a second pass, or all interfaces after the first
-        // will be marked as "forgotten" and cause trouble
-        if (removeFromSource) {
-            sourceClosure.getInterfaces().forEach((i) => i.remove());
-        }
-    }
-
-    /**
-     * Converts TS compliant code to JS compliant code.
-     * @param source source file to convert.
-     */
-    public rectify(source: morph.SourceFile) {
-        source
-            .getNamespaces()
-            .forEach((ns) => this.interfacesToClasses(ns, source));
-        this.interfacesToClasses(source, source);
-    }
-
-    /**
-     * Creates JS class stubs. Removes all TS specific syntax.
-     * @param ns namespace to create the classes for.
-     * @param target source to generate the stubs into.
-     * @param context context file.
-     */
-    public generateStubs(
-        ns: morph.NamespaceDeclaration,
-        target: morph.SourceFile,
-        context: morph.SourceFile
-    ) {
-        // FIXME: switch for commonjs vs esm
-        this.interfacesToClasses(ns, context, target, false);
-        // remove types and keywords for JS compliance
-        const classes = target.getClasses();
-        const exports = classes
-            .filter((c) => c.isExported())
-            .map((c) => c.getName());
-        classes.forEach((c) => {
-            c.getProperties().forEach((p) => p.setType(""));
-            c.setIsExported(false);
-        });
-
-        target.addStatements(`module.exports = {${exports.join(",\n  ")}}`);
-    }
-}
 
 export const emitJSCompliantFiles = (
     source: morph.SourceFile,
