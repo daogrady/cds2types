@@ -59,18 +59,13 @@ class ModuleQualifier {
     /**
      * @returns a name usable as alias in an import. I.e.
      * foo.bar.baz become _foo_bar_baz. The leading underscore
-     * ensures that we never end up with an empty name for top level namespaces.
+     * ensures that we never end up with an empty name for top level namespaces:
+     * import * as  from foo
      */
     public getAlias(): string {
-        return (
-            // prepending an underscore helps with the top-level NS,
-            // which would resolve to an empty string, leading to:
-            // import * as  from foo
-            "_" +
-            [this.getNamespace().replace(/\./g, "_"), this.clazz]
-                .filter((x) => !!x)
-                .join(".")
-        );
+        return ["_" + this.getNamespace().replace(/\./g, "_"), this.clazz]
+            .filter((x) => !!x)
+            .join(".");
     }
 
     /**
@@ -317,6 +312,12 @@ const writeNamespace = async (
             name: i.getName(),
             extends: i.getExtends().map((e) => {
                 const mq = new ModuleQualifier(e.getText(), true);
+                console.log(e.getText());
+                console.log(
+                    mq.getNamespace() === nsmq.getNamespace()
+                        ? (mq.clazz as string)
+                        : mq.getAlias()
+                );
                 return mq.getNamespace() === nsmq.getNamespace()
                     ? (mq.clazz as string)
                     : mq.getAlias();
