@@ -108,7 +108,8 @@ const interfacesToClasses = (
     destinationClosure:
         | morph.NamespaceDeclaration
         | morph.SourceFile = sourceClosure,
-    removeFromSource = true
+    removeFromSource = true,
+    plainJs = false
 ) => {
     sourceClosure.getInterfaces().forEach((i) => {
         const clazz: morph.ClassDeclarationStructure = {
@@ -117,7 +118,7 @@ const interfacesToClasses = (
             isExported: true,
             properties: i.getProperties().map((p) => ({
                 name: p.getName(),
-                type: getTypeText(p),
+                type: plainJs ? "" : getTypeText(p),
             })),
             extends: i
                 .getExtends()
@@ -164,7 +165,7 @@ const rectify = (source: morph.SourceFile) => {
  * @param context context file.
  */
 const generateStubs = (
-    ns: morph.NamespaceDeclaration,
+    ns: morph.NamespaceDeclaration | morph.SourceFile,
     target: morph.SourceFile,
     context: morph.SourceFile
 ) => {
@@ -188,11 +189,22 @@ const generateStubs = (
  * @param p Property to retrieve the type for.
  * @returns Type of property, if possible, else "any".
  */
-const getTypeText = (p): string => {
+const getTypeText = (p: morph.PropertySignature): string => {
     try {
         return p.getType().getText();
     } catch {
-        return "any";
+        // in some cases for reasons unbeknownst to me, p.getType()
+        // raises "TypeError: Cannot read properties of undefined (reading 'flags')"
+        // so as a hacky last resort, we try to gather the type string from the
+        // raw source text.
+        // foo: bar; -> bar
+        return p
+            .getText() // foo: bar;
+            .replace(";", "") // foo: bar
+            .split(":") // ["foo", " bar"]
+            .slice(-1) // [" bar"]
+            .join("") // " bar"
+            .trim(); // "bar"
     }
 };
 
@@ -312,12 +324,6 @@ const writeNamespace = async (
             name: i.getName(),
             extends: i.getExtends().map((e) => {
                 const mq = new ModuleQualifier(e.getText(), true);
-                console.log(e.getText());
-                console.log(
-                    mq.getNamespace() === nsmq.getNamespace()
-                        ? (mq.clazz as string)
-                        : mq.getAlias()
-                );
                 return mq.getNamespace() === nsmq.getNamespace()
                     ? (mq.clazz as string)
                     : mq.getAlias();
@@ -360,12 +366,22 @@ export const emitJSCompliantFiles = (
         new Map<string, Definition>()
     );
 
-    const rootSourceFile: morph.SourceFile = source
+    const rootdTsFile: morph.SourceFile = source
         .getProject()
-        .createSourceFile(options.output + "/index.d.ts");
+        .createSourceFile(path.join(options.output, "/index.d.ts"));
     const rootNamespace: Namespace = new Namespace(rootDefs, "");
-    rootNamespace.generateCode(rootSourceFile, []);
-    rootSourceFile.save();
+    rootNamespace.generateCode(rootdTsFile, []);
+    rootdTsFile.save();
+
+    const rootJsFile: morph.SourceFile = source
+        .getProject()
+        .createSourceFile(path.join(options.output, "/index.js"));
+
+    //rootJsFile.save();
+
+    generateStubs(rootdTsFile, rootJsFile, source);
+    //interfacesToClasses(rootdTsFile, source, rootJsFile, false, true);
+    rootJsFile.save();
 
     source
         .getNamespaces()
