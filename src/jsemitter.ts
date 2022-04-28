@@ -4,6 +4,7 @@ import { Definition, IElement } from "./utils/types";
 import { Kind } from "./utils/cds.types";
 import { Namespace } from "./types/namespace";
 import { CSN } from "@sap/cds/apis/csn";
+import { map } from "lodash";
 
 /**
  * Bit of a hack. We need one namespace for entities on top level.
@@ -76,23 +77,6 @@ class ModuleQualifier {
         return path.relative(rel, this.getDirectory());
     }
 }
-
-/**
- * TODO
- * @param name fully qualified import name.
- * @param rel path to resolve relative to.
- * @param cson CSON context.
- * @returns resolved path.
- */
-const resolveImport = (name: string, rel: string, cson: CSN): string => {
-    if (cson.definitions !== undefined) {
-        type ExtDefinition = Definition & { $location };
-        const def: ExtDefinition & { $location } = cson.definitions[
-            name
-        ] as unknown as ExtDefinition;
-    }
-    return name;
-};
 
 /**
  * Converts all interfaces (which don't exist in plain JS)
@@ -257,7 +241,7 @@ const addOrAmendProperty = (
  * of all interfaces in the namespace and resolves them to import statements
  * if they are part of another namespace.
  * @param ns the namespace to collect the imports from.
- * @param rel relative path.
+ * @param rel path of the namespace to resolve the imports for.
  * @param source source file in which to resolve the imports.
  * @param cson CSON context.
  * @returns a list of module qualifiers describing the imports for the namespace.
@@ -277,8 +261,29 @@ const getImportPaths = (
                     i
                         .getExtends()
                         .filter((e) => !!e.getText())
-                        .map((e) => resolveImport(e.getText(), rel, cson))
-                        .map((e) => splitNamespace(e)[0])
+                        .map((e) => splitNamespace(e.getText())[0])
+                        // add references collected from property types
+                        .concat(
+                            i
+                                .getProperties()
+                                .map((prop) =>
+                                    resolve(
+                                        [ns.getName(), i.getName()].join("."),
+                                        prop.getName(),
+                                        cson
+                                    )
+                                )
+                                .filter((p) => !!p)
+                                .map((p) =>
+                                    (p as ModuleQualifier).getNamespace()
+                                )
+                            /*.map((p) =>
+                                    (p as string)
+                                        .split(".")
+                                        .slice(0, -1)
+                                        .join(".")
+                                ) */ // remove entity name to receive pure namespace
+                        )
                 )
                 .reduce((prev, curr) => prev.concat(curr), []) // flatten
         ),
@@ -331,7 +336,12 @@ const writeNamespace = async (
             isExported: true,
             properties: i.getProperties().map((p) => ({
                 name: p.getName(),
-                type: getTypeText(p),
+                type:
+                    resolve(
+                        [ns.getName(), i.getName()].join("."),
+                        p.getName(),
+                        cson
+                    )?.getAlias() ?? getTypeText(p),
             })),
         })
     );
@@ -345,10 +355,26 @@ const writeNamespace = async (
     jsFile.save();
 };
 
+const resolve = (
+    fqEntity: string,
+    propName: string,
+    cson: CSN
+): ModuleQualifier | undefined =>
+    cson.definitions &&
+    fqEntity in cson.definitions &&
+    "elements" in cson.definitions[fqEntity] &&
+    propName in cson.definitions[fqEntity]["elements"] &&
+    "target" in cson.definitions[fqEntity]["elements"][propName]
+        ? new ModuleQualifier(
+              cson.definitions[fqEntity]["elements"][propName]["target"],
+              true
+          ) // target (for association) and type both exist. issue?
+        : undefined;
+
 export const emitJSCompliantFiles = (
     source: morph.SourceFile,
     options,
-    cson
+    cson: CSN
 ) => {
     const rootDefs = source.getInterfaces().reduce(
         (dict, inter) =>
