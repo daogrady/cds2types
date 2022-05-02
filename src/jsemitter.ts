@@ -4,7 +4,6 @@ import { Definition, IElement } from "./utils/types";
 import { Kind } from "./utils/cds.types";
 import { Namespace } from "./types/namespace";
 import { CSN } from "@sap/cds/apis/csn";
-import { map } from "lodash";
 
 /**
  * Bit of a hack. We need one namespace for entities on top level.
@@ -75,6 +74,16 @@ class ModuleQualifier {
      */
     public getRelativePath(rel: string): string {
         return path.relative(rel, this.getDirectory());
+    }
+
+    /**
+     * Convenience method to find out if the passed rel is the same namespace
+     * as self's namespace. I.e. we do not need an import to for references.
+     * @param rel the directory to which we try to find the relative path to.
+     * @returns true if the relative namespace is empty, i.e. they are the same namespace.
+     */
+    public isLocalNamespace(rel = ""): boolean {
+        return this.getRelativePath(rel) === "";
     }
 }
 
@@ -183,8 +192,8 @@ const getTypeText = (p: morph.PropertySignature): string => {
         // raw source text.
         // foo: bar; -> bar
         return p
-            .getText() // foo: bar;
-            .replace(";", "") // foo: bar
+            .getText() // "foo: bar;"
+            .replace(";", "") // "foo: bar"
             .split(":") // ["foo", " bar"]
             .slice(-1) // [" bar"]
             .join("") // " bar"
@@ -277,19 +286,13 @@ const getImportPaths = (
                                 .map((p) =>
                                     (p as ModuleQualifier).getNamespace()
                                 )
-                            /*.map((p) =>
-                                    (p as string)
-                                        .split(".")
-                                        .slice(0, -1)
-                                        .join(".")
-                                ) */ // remove entity name to receive pure namespace
                         )
                 )
                 .reduce((prev, curr) => prev.concat(curr), []) // flatten
         ),
     ] // extract unique module paths
         .map((p) => new ModuleQualifier(p))
-        .filter((q) => !!q.getRelativePath(rel)); // empty rel path == same namespace
+        .filter((q) => !q.isLocalNamespace(rel)); // empty rel path == same namespace
 };
 
 /**
@@ -336,12 +339,20 @@ const writeNamespace = async (
             isExported: true,
             properties: i.getProperties().map((p) => ({
                 name: p.getName(),
-                type:
-                    resolve(
+                type: (() => {
+                    const pns = resolve(
                         [ns.getName(), i.getName()].join("."),
                         p.getName(),
                         cson
-                    )?.getAlias() ?? getTypeText(p),
+                    );
+                    // don't include namespace reference if the referenced
+                    // entity resides in the same namespace.
+                    return (
+                        (pns?.getNamespace() == nsmq.getNamespace()
+                            ? pns.clazz
+                            : pns?.getAlias()) ?? getTypeText(p)
+                    );
+                })(),
             })),
         })
     );
@@ -355,6 +366,21 @@ const writeNamespace = async (
     jsFile.save();
 };
 
+/**
+ * Resolves a property within an entity to a ModuleQualifier.
+ *
+ * entity a.b.Foo {}
+ * entity c.d.Bar {
+ *   foo: a.b.Foo;
+ * }
+ *
+ * resolve("c.d.Bar", "foo") -> "a.b.Foo"
+ *
+ * @param fqEntity The fully qualified path to the entity.
+ * @param propName The name of the property within said entity.
+ * @param cson The cson context to retrieve the property's type from.
+ * @returns The properties ModuleQualifier if it exists, or undefined.
+ */
 const resolve = (
     fqEntity: string,
     propName: string,
