@@ -143,15 +143,6 @@ const interfacesToClasses = (
 };
 
 /**
- * Converts TS compliant code to JS compliant code.
- * @param source source file to convert.
- */
-const rectify = (source: morph.SourceFile) => {
-    source.getNamespaces().forEach((ns) => interfacesToClasses(ns, source));
-    interfacesToClasses(source, source);
-};
-
-/**
  * Creates JS class stubs. Removes all TS specific syntax.
  * @param ns namespace to create the classes for.
  * @param target source to generate the stubs into.
@@ -295,6 +286,21 @@ const getImportPaths = (
         .filter((q) => !q.isLocalNamespace(rel)); // empty rel path == same namespace
 };
 
+const getNames = (
+    entityName: string,
+    cson: CSN,
+    namespace: string | undefined
+): [string, string] => {
+    const fq = [namespace, entityName].join(".");
+    const singularAnnotation = cson?.definitions?.[fq]?.["@singular"]?.["="];
+    const pluralAnnotation = cson?.definitions?.[fq]?.["@singular"]?.["="];
+
+    const singular = singularAnnotation ?? entityName;
+    const plural = pluralAnnotation ?? `${entityName}Many`;
+
+    return [singular, plural];
+};
+
 /**
  * Writes the namespace to its own file.
  * @param ns namespace to write.
@@ -327,9 +333,10 @@ const writeNamespace = async (
     );
 
     const nsmq = new ModuleQualifier(ns.getName());
-    ns.getInterfaces().forEach((i) =>
+    ns.getInterfaces().forEach((i) => {
+        const [singular, plural] = getNames(i.getName(), cson, ns.getName());
         dTsFile.addInterface({
-            name: i.getName(),
+            name: singular, //i.getName(),
             extends: i.getExtends().map((e) => {
                 const mq = new ModuleQualifier(e.getText(), true);
                 return mq.getNamespace() === nsmq.getNamespace()
@@ -354,8 +361,15 @@ const writeNamespace = async (
                     );
                 })(),
             })),
-        })
-    );
+        });
+        dTsFile.save();
+        dTsFile.addTypeAlias({
+            name: plural,
+            type: `${singular}[]`,
+        });
+    });
+
+    interfacesToClasses(dTsFile, source, dTsFile, true, false);
     dTsFile.save();
 
     // generate .js
@@ -386,11 +400,15 @@ const resolve = (
     propName: string,
     cson: CSN
 ): ModuleQualifier | undefined =>
+    /*
+
     cson.definitions &&
     fqEntity in cson.definitions &&
     "elements" in cson.definitions[fqEntity] &&
     propName in cson.definitions[fqEntity]["elements"] &&
     "target" in cson.definitions[fqEntity]["elements"][propName]
+    */
+    !!cson?.definitions?.[fqEntity]?.["elements"]?.[propName]?.["target"]
         ? new ModuleQualifier(
               cson.definitions[fqEntity]["elements"][propName]["target"],
               true
