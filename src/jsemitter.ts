@@ -1,9 +1,50 @@
 import * as morph from "ts-morph";
-import path from "path";
+import path, { basename } from "path";
 import { Definition, IElement } from "./utils/types";
 import { Kind } from "./utils/cds.types";
 import { Namespace } from "./types/namespace";
 import { CSN } from "@sap/cds/apis/csn";
+import { startCase } from "./array.util";
+
+// shamelessly stolen from https://github.tools.sap/cap/dev/blob/main/etc/inflect.js
+const singular4 = (dn, stripped) => {
+    let n = dn.name || dn;
+    if (stripped) n = n.match(last)[0];
+    return (
+        dn["@singular"] ||
+        (/.*species|news$/i.test(n)
+            ? n
+            : /.*ess$/.test(n)
+            ? n // Address
+            : /.*ees$/.test(n)
+            ? n.slice(0, -1) // Employees --> Employee
+            : /.*[sz]es$/.test(n)
+            ? n.slice(0, -2)
+            : /.*[^aeiou]ies$/.test(n)
+            ? n.slice(0, -3) + "y" // Deliveries --> Delivery
+            : /.*s$/.test(n)
+            ? n.slice(0, -1)
+            : n)
+    );
+};
+
+const plural4 = (dn, stripped) => {
+    let n = dn.name || dn;
+    if (stripped) n = n.match(last)[0];
+    return (
+        dn["@plural"] ||
+        (/.*analysis|status|species|news$/i.test(n)
+            ? n
+            : /.*[^aeiou]y$/.test(n)
+            ? n.slice(0, -1) + "ies"
+            : /.*(s|x|z|ch|sh)$/.test(n)
+            ? n + "es"
+            : n + "s")
+    );
+};
+
+const last = /\w+$/;
+// end of thievery
 
 /**
  * Bit of a hack. We need one namespace for entities on top level.
@@ -173,7 +214,9 @@ const generateStubs = (
  * @param p Property to retrieve the type for.
  * @returns Type of property, if possible, else "any".
  */
-const getTypeText = (p: morph.PropertySignature): string => {
+const getTypeText = (
+    p: morph.PropertySignature | morph.TypeAliasDeclaration
+): string => {
     try {
         return p.getType().getText();
     } catch {
@@ -182,10 +225,11 @@ const getTypeText = (p: morph.PropertySignature): string => {
         // so as a hacky last resort, we try to gather the type string from the
         // raw source text.
         // foo: bar; -> bar
+        // foor = bar; -> bar
         return p
             .getText() // "foo: bar;"
             .replace(";", "") // "foo: bar"
-            .split(":") // ["foo", " bar"]
+            .split(/[:=]/) // ["foo", " bar"]
             .slice(-1) // [" bar"]
             .join("") // " bar"
             .trim(); // "bar"
@@ -252,8 +296,8 @@ const getImportPaths = (
     rel: string,
     source: morph.SourceFile,
     cson: CSN
-): ModuleQualifier[] => {
-    return [
+): ModuleQualifier[] =>
+    [
         ...new Set(
             ns
                 .getInterfaces()
@@ -284,8 +328,16 @@ const getImportPaths = (
     ] // extract unique module paths
         .map((p) => new ModuleQualifier(p))
         .filter((q) => !q.isLocalNamespace(rel)); // empty rel path == same namespace
-};
 
+/**
+ * Retrieves the singular and plural name for an entity foo.bar.Baz.
+ * If the appropriate annotations are presents, those are used.
+ * Else, we try to derive a singular/plural form.
+ * @param entityName name of the entity, without namespace (Baz).
+ * @param cson context CSON.
+ * @param namespace namespace (foo.bar).
+ * @returns tuple of [singular, plural].
+ */
 const getNames = (
     entityName: string,
     cson: CSN,
@@ -369,7 +421,14 @@ const writeNamespace = async (
         });
     });
 
-    interfacesToClasses(dTsFile, source, dTsFile, true, false);
+    ns.getTypeAliases().forEach((ta) =>
+        dTsFile.addTypeAlias({
+            name: ta.getName(),
+            type: getTypeText(ta),
+        })
+    );
+
+    //interfacesToClasses(dTsFile, source, dTsFile, true, false);
     dTsFile.save();
 
     // generate .js
@@ -400,20 +459,16 @@ const resolve = (
     propName: string,
     cson: CSN
 ): ModuleQualifier | undefined =>
-    /*
-
-    cson.definitions &&
-    fqEntity in cson.definitions &&
-    "elements" in cson.definitions[fqEntity] &&
-    propName in cson.definitions[fqEntity]["elements"] &&
-    "target" in cson.definitions[fqEntity]["elements"][propName]
-    */
-    !!cson?.definitions?.[fqEntity]?.["elements"]?.[propName]?.["target"]
-        ? new ModuleQualifier(
+    // FIXME: this is an ugly hack to avoid imports of *Texts-clases
+    // that are actually located in the same package.
+    // Obviously only a temporary fix (haha) and needs proper addressing.
+    ["texts", "localized"].includes(propName) ||
+    !cson?.definitions?.[fqEntity]?.["elements"]?.[propName]?.["target"]
+        ? undefined
+        : new ModuleQualifier(
               cson.definitions[fqEntity]["elements"][propName]["target"],
               true
-          ) // target (for association) and type both exist. issue?
-        : undefined;
+          ); // target (for association) and type both exist. issue?
 
 export const emitJSCompliantFiles = (
     source: morph.SourceFile,
