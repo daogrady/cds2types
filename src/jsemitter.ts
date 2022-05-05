@@ -209,6 +209,14 @@ const generateStubs = (
     target.addStatements(`module.exports = {${exports.join(",\n  ")}}`);
 };
 
+const tryer = <T>(f: () => T): [undefined, T] | [any, undefined] => {
+    try {
+        return [undefined, f()];
+    } catch (error) {
+        return [error, undefined];
+    }
+};
+
 /**
  * Retrieves the type text from a property.
  * @param p Property to retrieve the type for.
@@ -217,23 +225,36 @@ const generateStubs = (
 const getTypeText = (
     p: morph.PropertySignature | morph.TypeAliasDeclaration
 ): string => {
-    try {
-        return p.getType().getText();
-    } catch {
-        // in some cases for reasons unbeknownst to me, p.getType()
-        // raises "TypeError: Cannot read properties of undefined (reading 'flags')"
-        // so as a hacky last resort, we try to gather the type string from the
-        // raw source text.
-        // foo: bar; -> bar
-        // foor = bar; -> bar
-        return p
-            .getText() // "foo: bar;"
-            .replace(";", "") // "foo: bar"
-            .split(/[:=]/) // ["foo", " bar"]
-            .slice(-1) // [" bar"]
-            .join("") // " bar"
-            .trim(); // "bar"
-    }
+    // in some cases for reasons unbeknownst to me, p.getType()
+    // raises "TypeError: Cannot read properties of undefined (reading 'flags')"
+    // so as a hacky last resort, we try to gather the type string from the
+    // raw source text.
+    // foo: bar; -> bar
+    // foor = bar; -> bar
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const [_, result] = tryer(() => p.getType().getText());
+    return !!result
+        ? result
+        : p
+              .getText() // "foo: bar;"
+              .replace(";", "") // "foo: bar"
+              .split(/[:=]/) // ["foo", " bar"]
+              .slice(-1) // [" bar"]
+              .join("") // " bar"
+              .trim(); // "bar"
+};
+
+const getMemberValue = (m: morph.EnumMember): string | number => {
+    const [_, result] = tryer(() => m.getValue());
+    return !!result
+        ? result
+        : m
+              .getText() // "foo: bar;"
+              .replace(";", "") // "foo: bar"
+              .split(/[:=]/) // ["foo", " bar"]
+              .slice(-1) // [" bar"]
+              .join("") // " bar"
+              .trim(); // "bar"
 };
 
 /**
@@ -428,7 +449,17 @@ const writeNamespace = async (
         })
     );
 
-    //interfacesToClasses(dTsFile, source, dTsFile, true, false);
+    ns.getEnums().forEach((e) =>
+        dTsFile.addEnum({
+            name: e.getName(),
+            members: e.getMembers().map((m) => ({
+                name: m.getName(),
+                value: getMemberValue(m),
+            })),
+            isExported: true,
+        })
+    );
+
     dTsFile.save();
 
     // generate .js
@@ -459,14 +490,15 @@ const resolve = (
     propName: string,
     cson: CSN
 ): ModuleQualifier | undefined =>
-    // FIXME: this is an ugly hack to avoid imports of *Texts-clases
+    // FIXME: this is an ugly hack to avoid imports of *Texts-classes
     // that are actually located in the same package.
     // Obviously only a temporary fix (haha) and needs proper addressing.
     ["texts", "localized"].includes(propName) ||
     !cson?.definitions?.[fqEntity]?.["elements"]?.[propName]?.["target"]
         ? undefined
         : new ModuleQualifier(
-              cson.definitions[fqEntity]["elements"][propName]["target"],
+              cson.definitions[fqEntity]["elements"][propName]["target"] ??
+                  cson.definitions[fqEntity]["elements"][propName]["type"],
               true
           ); // target (for association) and type both exist. issue?
 
