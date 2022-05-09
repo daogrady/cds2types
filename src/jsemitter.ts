@@ -69,18 +69,20 @@ const ROOT_NAMESPACE_NAME = "$ROOT$";
 class ModuleQualifier {
     private module: string;
     public readonly clazz: string | undefined;
+    public readonly nonScalar: boolean;
 
     /**
      * @param path foo.bar, foo.bar.A, ...
      * @param containsClass if set to true, the last part will be considered a class name.
      */
-    constructor(path: string, containsClass = false) {
+    constructor(path: string, containsClass = false, nonScalar = false) {
         // TODO: collect imports from the using-directive, instead of using the extends parts
         if (containsClass) {
             [this.module, this.clazz] = splitNamespace(path);
         } else {
             this.module = path;
         }
+        this.nonScalar = nonScalar;
     }
 
     /**
@@ -427,10 +429,11 @@ const writeNamespace = async (
                     );
                     // don't include namespace reference if the referenced
                     // entity resides in the same namespace.
+                    const suffix = pns?.nonScalar ? "[]" : "";
                     return (
-                        (pns?.getNamespace() == nsmq.getNamespace()
+                        ((pns?.getNamespace() == nsmq.getNamespace()
                             ? pns.clazz
-                            : pns?.getAlias()) ?? getTypeText(p)
+                            : pns?.getAlias()) ?? getTypeText(p)) + suffix
                     );
                 })(),
             })),
@@ -460,6 +463,7 @@ const writeNamespace = async (
         })
     );
 
+    interfacesToClasses(dTsFile, source, dTsFile, true, false);
     dTsFile.save();
 
     // generate .js
@@ -489,18 +493,19 @@ const resolve = (
     fqEntity: string,
     propName: string,
     cson: CSN
-): ModuleQualifier | undefined =>
+): ModuleQualifier | undefined => {
     // FIXME: this is an ugly hack to avoid imports of *Texts-classes
     // that are actually located in the same package.
     // Obviously only a temporary fix (haha) and needs proper addressing.
-    ["texts", "localized"].includes(propName) ||
-    !cson?.definitions?.[fqEntity]?.["elements"]?.[propName]?.["target"]
+    const element = cson?.definitions?.[fqEntity]?.["elements"]?.[propName];
+    return ["texts", "localized"].includes(propName) || !element?.["target"]
         ? undefined
         : new ModuleQualifier(
-              cson.definitions[fqEntity]["elements"][propName]["target"] ??
-                  cson.definitions[fqEntity]["elements"][propName]["type"],
-              true
+              element["target"] ?? element["type"],
+              true,
+              !!element.cardinality
           ); // target (for association) and type both exist. issue?
+};
 
 export const emitJSCompliantFiles = (
     source: morph.SourceFile,
